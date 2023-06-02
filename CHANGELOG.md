@@ -1,3 +1,13 @@
+06-02-2023
+
+- Reworked the HLS tutorial to include:
+  - The earthaccess for authentication, 
+  - The .yml file for environment requirements
+  - Addressed the issue with quality decoding
+  - Made new visualizations
+  - Changed the ROI to include the larger area with variation in quality info
+- 
+
 11-02-2021  
 - Geoviews seems to have compatibility issues with Shapely 1.8. Specified Shapely 1.7 in the environment setup instructions.  
 - Remove Python env setup instructions from the tutorial. The setup instructions are now only found in the Readme.  
