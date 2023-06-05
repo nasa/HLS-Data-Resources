@@ -24,3 +24,7 @@ dependencies:
   - easygui
   - cartopy
   - geoviews
+  - shapely
+  - pyproj
+  - netcdf4
+  - zarr
