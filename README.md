@@ -17,14 +17,16 @@ The  Harmonized Landsat Sentinel-2 ([HLS](https://lpdaac.usgs.gov/data/get-start
 
 ## Prerequisites/Setup Instructions
 
-This repository requires that users set up a compatible Python environment and download the EMIT granules used. See the `setup_instuctions.md` file in the `./setup/` folder.
+Instructions for setting up a compatible environment for accessing HLS data are linked to below.
+- [`Python` set up instructions](setup/setup_instructions_python.md)
 
 ## Helpful Links  
 
-- HLS Product Pages:  
-- [HLS on Earth Data Search]()  
-- HLS User Guides:
-- [HLS Data Resources Repository]()  
+- [HLSL30 V2 Product Page](https://www.doi.org/10.5067/HLS/HLSL30.002)  
+- [HLSS30 V2 Product Page](https://www.doi.org/10.5067/HLS/HLSS30.002)  
+- [HLS on Earthdata Search](https://search.earthdata.nasa.gov/search?q=%22HLSS30%22)  
+- [HLS V2 User Guide](https://lpdaac.usgs.gov/documents/1326/HLS_User_Guide_V2.pdf)  
+- [HLS Data Resources Repository](https://github.com/nasa/HLS-Data-Resources)  
 
 ## Contact Info  
 
