@@ -9,7 +9,11 @@ The tutorials in this repository require a compatible Python Environment, an ins
 
 ## 1. Python Environment Setup  
 
-This Python Environment will work for all tutorials within this repository. Using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to create a compatible Python environment using the included `.yml` file.  
+This Python Environment will work for all tutorials within this repository. Using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to create a compatible Python environment:
+
+> `mamba create -n hls_tutorial -c conda-forge --yes  python=3.9 gdal=3.7.0 hvplot=0.8.4 geoviews=1.10.0 rioxarray rasterio jupyter geopandas earthaccess jupyter_bokeh`
+
+Note: you can also use the included `.yml` file:  
 
 > `conda env create -f python/setup/hls_tutorial.yml`  
 
