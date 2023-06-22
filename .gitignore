@@ -1,1 +1,4 @@
-.ipynb_checkpoints/
+*.ipynb_checkpoints/
+ignore
+*.tif*
+*data/HLS-Derived_EVI_Stats.csv*
