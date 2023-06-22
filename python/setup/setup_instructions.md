@@ -11,7 +11,7 @@ The tutorials in this repository require a compatible Python Environment, an ins
 
 This Python Environment will work for all tutorials within this repository. Using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to create a compatible Python environment using the included `.yml` file.  
 
-> `conda env create -f python/setup/hls_tutorial.yml`  
+> `mamba env create -f python/setup/hls_tutorial.yml`  
 
 Next, activate the Python Environment that you just created.
 
