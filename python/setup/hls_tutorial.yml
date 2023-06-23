@@ -313,4 +313,3 @@ dependencies:
       - pywavelets==1.4.1
       - scikit-image==0.21.0
       - tifffile==2023.4.12
-prefix: /Users/erikbolch/miniconda3/envs/hls_tutorial
