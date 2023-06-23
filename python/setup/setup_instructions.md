@@ -4,7 +4,9 @@ The tutorials in this repository require a compatible Python Environment, an ins
 
 + If you do not have an Environment Manager installed, we recommend  [Anaconda](https://www.anaconda.com/products/distribution) or [miniconda](https://docs.conda.io/en/latest/miniconda.html). When installing, Anaconda or Miniconda be sure to check the box to "Add Anaconda to my PATH environment variable" to enable use of conda directly from your command line interface.
 + We also recommend using [mamba](https://mamba.readthedocs.io/en/latest/) with conda to manage packages. It typically offers higher speed and more reliable environment solutions. To install mamba, use your preferred command line interface (command prompt, terminal, cmder, etc.) and type the following:
+
     > `conda install mamba -n base -c conda-forge`  
+
 + If you do not have Git, you can download it [here](https://git-scm.com/downloads).  
 
 ## 1. Python Environment Setup  
@@ -15,7 +17,9 @@ This Python Environment will work for all tutorials within this repository. Usin
 
 Activate the environment:
 
-> `mamba activate hls_tutorial`
+> `conda activate hls_tutorial`
+
+Then use pip to install the scikit-image library and its dependencies (version 0.21.0 is not on a conda channel yet)
 
 > `pip install scikit-image`
 
@@ -25,11 +29,11 @@ Note: you can also use the included `.yml` file if on Windows:
 
 ## 2. Opening the notebooks
 
-If you just did the above you can skip to steps above you can simply launch Jupyter Notebook by typing the following in command line:
+If you did the above and already have your environment activated, you can simply launch Jupyter Notebook by typing the following in command line:
 
 > `jupyter notebook`
 
-If returning or you already and an environment, using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to activate the Python Environment:
+If returning to an already created but inactive environment, using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to activate the Python Environment:
 
 > `conda activate hls_tutorial`  
 
@@ -38,6 +42,7 @@ Now you can launch Jupyter Notebook to open the notebooks included.
 > `jupyter notebook`  
 
 [Additional information](https://conda.io/docs/user-guide/tasks/manage-environments.html) on setting up and managing Conda environments.  
+
 **Still having trouble getting a compatible Python environment set up? Contact [LP DAAC User Services](https://lpdaac.usgs.gov/lpdaac-contact-us/).**  
 
 ## Contact Info  
