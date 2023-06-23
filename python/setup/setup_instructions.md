@@ -11,17 +11,25 @@ The tutorials in this repository require a compatible Python Environment, an ins
 
 This Python Environment will work for all tutorials within this repository. Using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to create a compatible Python environment:
 
-> `mamba create -n hls_tutorial -c conda-forge --yes  python=3.9 gdal=3.7.0 hvplot=0.8.4 geoviews=1.10.0 rioxarray rasterio jupyter geopandas earthaccess jupyter_bokeh`
+> `mamba create -n hls_tutorial -c conda-forge --yes  python=3.9 gdal=3.7.0 hvplot=0.8.4 geoviews=1.9.6 rioxarray rasterio jupyter geopandas earthaccess jupyter_bokeh`
 
-Note: you can also use the included `.yml` file:  
+Activate the environment:
 
-> `conda env create -f python/setup/hls_tutorial.yml`  
+> `mamba activate hls_tutorial`
 
-or using mamba (typically faster)
+> `pip install scikit-image`
+
+Note: you can also use the included `.yml` file if on Windows:  
 
 > `mamba env create -f python/setup/hls_tutorial.yml`  
 
-Next, activate the Python Environment that you just created.
+## 2. Opening the notebooks
+
+If you just did the above you can skip to steps above you can simply launch Jupyter Notebook by typing the following in command line:
+
+> `jupyter notebook`
+
+If returning or you already and an environment, using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to activate the Python Environment:
 
 > `conda activate hls_tutorial`  
 
