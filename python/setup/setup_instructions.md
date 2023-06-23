@@ -25,7 +25,7 @@ Then use pip to install the scikit-image library and its dependencies (version 0
 
 Note: you can also use the included `.yml` file if on Windows:  
 
-> `mamba env create -f python/setup/hls_tutorial.yml`  
+> `mamba env create -f python/setup/hls_tutorial_windows.yml`  
 
 ## 2. Opening the notebooks
 
