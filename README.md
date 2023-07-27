@@ -8,7 +8,7 @@ Below are data use resources available HLS data.
 
 |Name|Type/Link|Summary|Services and Tools|
 |----|---------|-------|------------------|
-| HLS_Tutorial | [Python Notebook](python/tutorials/HLS_Tutorial.ipynb) | Tutorial demonstrating how to search for, access, and process HLS data | CMR-STAC API |
+| HLS_Tutorial | [Python Notebook](python/tutorials/HLS_Tutorial.ipynb) | Tutorial demonstrating how to search for, access, and process HLS data | [earthaccess](https://github.com/nsidc/earthaccess) |
 | HLS SuPER Script | [Python Script](python/scripts/HLS_SuPER/) | Find, download, and subset HLS data from a command line executable | CMR-STAC API |
 
 ## HLS Background
