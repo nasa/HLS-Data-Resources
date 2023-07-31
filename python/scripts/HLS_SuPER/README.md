@@ -207,6 +207,10 @@ If quality filtering is set to True (default), the following quality filtering w
 
 - Cloud == 0 (No Cloud)  
 - Cloud shadow == 0 (No Cloud shadow)  
+- Adjacent to cloud/shadow == 0 (No Adjacent to cloud/shadow)
+- Snow/ice == 0 (No Snow/ice)
+- Water == 0 (No Water)
+- aerosol leve == "Climatology aerosol" (No Low, Moderate, and High aerosol level)
 
 meaning that any pixel that does not meet the criteria outlined above will be removed and set to `_FillValue` in the output files.  
 
@@ -246,7 +250,7 @@ If you selected nc4 or Zarr as the output file format, the following naming conv
 **Voice:** +1-866-573-3222  
 **Organization:** Land Processes Distributed Active Archive Center (LP DAAC)  
 **Website:** [https://lpdaac.usgs.gov/](https://lpdaac.usgs.gov/)  
-**Date last modified:** 11-26-2021  
+**Date last modified:** 07-28-2023  
 
 ¹KBR, Inc., contractor to the U.S. Geological Survey, Earth Resources Observation and Science (EROS) Center,  
  Sioux Falls, South Dakota, USA. Work performed under USGS contract G15PD00467 for LP DAAC².  

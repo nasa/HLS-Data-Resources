@@ -8,7 +8,7 @@ quality filtering, apply the scale factor, and export in the user-defined
 output file format.
 -------------------------------------------------------------------------------
 Authors: Cole Krehbiel and Mahsa Jami
-Last Updated: 01-29-2021
+Last Updated: 07-28-2023
 ===============================================================================
 """
 
@@ -35,6 +35,8 @@ def hls_process(outDir, ROI, qf, scale, of, fileList):
     from datetime import datetime
     import warnings
     from sys import platform
+    # import rioxarray as rxr
+    import earthaccess
 
     ######################### HANDLE INPUTS ###################################
     os.chdir(outDir)
@@ -76,72 +78,35 @@ def hls_process(outDir, ROI, qf, scale, of, fileList):
     else:
         bbox = [float(rr.strip(']').strip('[').strip("'").strip('"').strip(' ')) for rr in ROI.split(',')]
         roi_shape = box(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+        # print(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
 
     ######################## AUTHENTICATION ###################################
-    # GDAL configs used to successfully access LP DAAC Cloud Assets via vsicurl
-    gdal.SetConfigOption("GDAL_HTTP_UNSAFESSL", "YES")
+    # GDAL configurations used to successfully access LP DAAC Cloud Assets via vsicurl 
     gdal.SetConfigOption('GDAL_HTTP_COOKIEFILE','~/cookies.txt')
     gdal.SetConfigOption('GDAL_HTTP_COOKIEJAR', '~/cookies.txt')
-    gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN','FALSE')
+    gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN','EMPTY_DIR')
     gdal.SetConfigOption('CPL_VSIL_CURL_ALLOWED_EXTENSIONS','TIF')
-
-    # Verify a netrc is set up with Earthdata Login Username and password
-    urs = 'urs.earthdata.nasa.gov'    # Earthdata URL to call for authentication
-    prompts = ['Enter NASA Earthdata Login Username \n(or create an account at urs.earthdata.nasa.gov): ','Enter NASA Earthdata Login Password: ']
-
-    # Determine if netrc file exists, and if it includes NASA Earthdata Login Credentials
-    if 'win' in platform:
-        nrc = '_netrc'
-    else:
-        nrc = '.netrc'
-    try:
-        netrcDir = os.path.expanduser(f"~/{nrc}")
-        netrc(netrcDir).authenticators(urs)[0]
-        del netrcDir
-
-    # If not, create a netrc file and prompt user for NASA Earthdata Login Username/Password
-    except FileNotFoundError:
-        homeDir = os.path.expanduser("~")
-
-        # Windows OS won't read the netrc unless this is set
-        Popen(f'setx HOME {homeDir}', shell=True, stdout=DEVNULL);
-
-        if nrc == '.netrc':
-            Popen(f'touch {homeDir + os.sep}{nrc} | chmod og-rw {homeDir + os.sep}{nrc}', shell=True, stdout=DEVNULL, stderr=STDOUT);
-
-        # Unable to use touch/chmod on Windows OS
-        Popen(f'echo machine {urs} >> {homeDir + os.sep}{nrc}', shell=True)
-        Popen(f'echo login {getpass(prompt=prompts[0])} >> {homeDir + os.sep}{nrc}', shell=True)
-        Popen(f'echo password {getpass(prompt=prompts[1])} >> {homeDir + os.sep}{nrc}', shell=True)
-        del homeDir
-
-    # Determine OS and edit netrc file if it exists but is not set up for NASA Earthdata Login
-    except TypeError:
-        homeDir = os.path.expanduser("~")
-        Popen(f'echo machine {urs} >> {homeDir + os.sep}{nrc}', shell=True)
-        Popen(f'echo login {getpass(prompt=prompts[0])} >> {homeDir + os.sep}{nrc}', shell=True)
-        Popen(f'echo password {getpass(prompt=prompts[1])} >> {homeDir + os.sep}{nrc}', shell=True)
-        del homeDir
-    del urs, prompts
+    gdal.SetConfigOption('GDAL_HTTP_UNSAFESSL', 'YES')# .netrc file config with earthaccess
+    earthaccess.login(persist=True)
+    
 
     ######################## PROCESS FILES ####################################
     # Define source CRS of the ROI
     geo_CRS = pyproj.Proj('+proj=longlat +datum=WGS84 +no_defs', preserve_units=True)
     all_cogs = []
-    z = 0
-
+    
     # Load into memory using ROI and vsicurl (via rasterio)
     for f in file_dict:
-        
         # Try to access each item/asset 3 times
         for retry in range(0,3):
+            z = 0
             try:
                 # Read Quality band
                 qa = rio.open([file for file in file_dict[f] if 'Fmask' in file][0])
 
                 # Convert bbox/geojson from EPSG:4326 to local UTM for scene
                 utm = pyproj.Proj(qa.crs)                             # Destination CRS read from QA band
-                project = pyproj.Transformer.from_proj(geo_CRS, utm)  # Set up src -> dest transformation
+                project = pyproj.Transformer.from_proj(geo_CRS, utm)  # Set up src -> dest transformation 
                 roi_UTM = transform(project.transform, roi_shape)     # Apply reprojection to ROI
 
                 # Subset the fmask quality data (returned by default)
@@ -149,40 +114,51 @@ def hls_process(outDir, ROI, qf, scale, of, fileList):
 
                 originalName = qa.name.rsplit('/', 1)[-1] # If only exporting FMASK, use for original name
                 
+                if qf is True:
+                    bit_nums = [1,2,3,4,5]  
+                    mask_array = np.zeros((qa_subset[0].shape[0], qa_subset[0].shape[1]))
+                    for b in bit_nums:  
+                        # Apply QA mask and set masked data to fill value
+                        mask_temp = np.array(qa_subset) & 1 << b > 0
+                        
+                        mask_array = np.logical_or(mask_array , mask_temp)
+
+
                 # Loop through and process all other layers (excluding QA)
                 for b in [file for file in file_dict[f] if 'Fmask' not in file]:
                     z += 1
 
                     # Read file and load in subset
                     band = rio.open(b)
+                    
                     subset, btransform = rio.mask.mask(band, [roi_UTM], crop=True)
 
                     # Filter by quality if desired
                     if qf is True:
-                        '''Default Quality filtering here includes: Cloud = No and Cloud Shadow = No'''
-
-                        # List of values meeting quality criteria
-                        goodQ = [0,1,4,5,16,17,20,21,32,33,36,37,48,49,52,53,64,
-                                 65,68,69,80,81,84,85,96,97,100,101,112,113,116,
-                                 117,128,129,132,133,144,145,148,149,160,161,
-                                 164,165,176,177,180,181,192,193,196,197,208,
-                                 209,212,213,224,225,228,229,240,241,244,245]
-
-                        # Apply QA mask and set masked data to fill value
-                        subset = np.ma.MaskedArray(subset, np.in1d(qa_subset, goodQ, invert=True))
-                        subset = np.ma.filled(subset, band.meta['nodata'])
+                        '''Default Quality filtering here includes: mask cloud, cloud shadow, adjacent to cloud/shadow, 
+                        water, snow/ice, and low, moderate and high aerosol levels'''
+                        datasets_masked = np.ma.MaskedArray(subset, mask = mask_array) # Apply QA mask to the ST data
+                        datasets_masked = np.ma.filled(datasets_masked, band.meta['nodata'])
+                        subset.data = datasets_masked
+        
 
                     # Apply scale factor if desired
                     if scale is True:
-                        subset = subset[0] * band.scales[0]  # Apply Scale Factor
+                        subset = subset[0] * band.scales[0] + band.offsets[0] # Apply Scale Factor
+                        scale_factor = (1.0,)
+                        add_offset = (0.0,)
 
                         try:
                             # Reset the fill value
-                            subset[subset == band.meta['nodata'] * band.scales[0]] = band.meta['nodata']
+                            subset[subset == band.meta['nodata'] * band.scales[0]+ band.offsets[0]] = band.meta['nodata']
                         except TypeError:
                             print(f"Fill Value is not provided for band {band.name.rsplit('.', 2)[-2]}")
                     else:
                         subset = subset[0]
+                        scale_factor = band.scales
+                        add_offset = band.offsets
+
+
                     ################# EXPORT AS COG ###########################
                     # Grab the original HLS S30 granule name
                     originalName = band.name.rsplit('/', 1)[-1]
@@ -191,9 +167,8 @@ def hls_process(outDir, ROI, qf, scale, of, fileList):
                     # Generate output name from the original filename
                     outName = f"{outDir}{originalName.split('.v2.0.')[0]}.v2.0.{bandName}.subset.tif"
                     tempName = f"{outDir}temp.tif"
-
                     # Create output GeoTIFF with overviews
-                    out_tif = rio.open(tempName, 'w', driver='GTiff', height=subset.shape[0], width=subset.shape[1], count=1, dtype=str(subset.dtype), crs=band.crs, transform=btransform)
+                    out_tif = rio.open(tempName, 'w', driver='GTiff', height=subset.shape[0], width=subset.shape[1], count=1, tiled= True,  dtype=str(subset.dtype), crs=band.crs, transform=btransform)
 
                     # Write the scaled, quality filtered band to the newly created GeoTIFF
                     out_tif.write(subset, 1)
@@ -202,37 +177,42 @@ def hls_process(outDir, ROI, qf, scale, of, fileList):
                     out_tif.build_overviews(band.overviews(1), Resampling.average)  # Calculate overviews
                     out_tif.update_tags(ns='rio_overview', resampling='average')    # Update tags
                     out_tif.nodata = band.meta['nodata']                            # Define fill value
-                    kwds = out_tif.profile                                          # Save profile
-                    kwds['tiled'] = True
-                    kwds['compress'] = 'LZW'
+                    out_tif.scales = scale_factor                 # Define scale value
+                    out_tif.offsets = add_offset                  # Define offset
+                    kwds = out_tif.profile
+                    kwds.update( compress='deflate', LAYOUT= 'COG')                                          # Save profile
+                    # kwds['tiled'] = True
+                    # kwds['compress'] = 'LZW'
                     out_tif.close()
-
                     # Open output file, add tiling and compression, and export as valid COG
                     with rio.open(tempName, 'r+') as src:
                         rio.shutil.copy(src, outName, copy_src_overviews=True, **kwds)
-                    src.close(), os.remove(tempName)
-
+                    src.close() , os.remove(tempName)
                     all_cogs.append(outName)  # Update list of outputs
-                    print(f"Exported {outName} ({z} of {len(files)})")
+                    print(f"Exported {outName} ({z} of {len(files)-1})")
 
-                # Export quality layer (Fmask)
-                outName = f"{outDir}{originalName.split('.v2.0.')[0]}.v2.0.Fmask.subset.tif"
-                tempName = f"{outDir}temp.tif"
-                out_tif = rio.open(tempName, 'w', driver='GTiff', height=qa_subset.shape[1], width=qa_subset.shape[2], count=1, dtype=str(qa_subset.dtype), crs=qa.crs, transform=qa_transform)
-                out_tif.write(qa_subset[0], 1)
-                out_tif.build_overviews(qa.overviews(1), Resampling.average)
-                out_tif.update_tags(ns='rio_overview', resampling='average')
-                out_tif.nodata = qa.meta['nodata']
-                kwds = out_tif.profile
-                kwds['tiled'] = True
-                kwds['compress'] = 'LZW'
-                out_tif.close()
-                with rio.open(tempName, 'r+') as src:
-                    rio.shutil.copy(src, outName, copy_src_overviews=True, **kwds)
-                src.close(), os.remove(tempName)
-                all_cogs.append(outName)
-                z += 1
-                print(f"Exported {outName} ({z} of {len(files)})")
+
+                if qf is False: # there is no need to get the Fmask layers if data is quality filtered
+                    # Export quality layer (Fmask)
+                    outName = f"{outDir}{originalName.split('.v2.0.')[0]}.v2.0.Fmask.subset.tif"
+                    tempName = f"{outDir}temp.tif"
+                    out_tif = rio.open(tempName, 'w', driver='GTiff', height=qa_subset.shape[1], width=qa_subset.shape[2], tiled= True, count=1, dtype=str(qa_subset.dtype), crs=qa.crs, transform=qa_transform)
+                    out_tif.write(qa_subset[0], 1)
+                    out_tif.build_overviews(qa.overviews(1), Resampling.average)
+                    out_tif.update_tags(ns='rio_overview', resampling='average')
+                    out_tif.nodata = qa.meta['nodata']
+                    kwds = out_tif.profile
+                    kwds.update( compress='deflate', LAYOUT= 'COG')                                          # Save profile
+                    # kwds['tiled'] = True
+                    # kwds['compress'] = 'LZW'
+                    
+                    out_tif.close()
+                    with rio.open(tempName, 'r+') as src:
+                        rio.shutil.copy(src, outName, copy_src_overviews=True, **kwds)
+                    src.close(), os.remove(tempName)
+                    all_cogs.append(outName)
+                    z += 1
+                    print(f"Exported {outName} (Quality)")
                 break
             except:
                 print(f"Unable to process assets for item {f}. (Attempt {retry+1} of 3)")
