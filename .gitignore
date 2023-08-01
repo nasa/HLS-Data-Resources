@@ -2,3 +2,4 @@
 ignore
 *.tif*
 *data/HLS-Derived_EVI_Stats.csv*
+*.txt*
