@@ -210,7 +210,8 @@ If quality filtering is set to True (default), the following quality filtering w
 - Adjacent to cloud/shadow == 0 (No Adjacent to cloud/shadow)
 - Snow/ice == 0 (No Snow/ice)
 - Water == 0 (No Water)
-- aerosol leve == "Climatology aerosol" (No Low, Moderate, and High aerosol level)
+- aerosol level == Climatology aerosol (No Low, Moderate, and High aerosol level)
+
 
 meaning that any pixel that does not meet the criteria outlined above will be removed and set to `_FillValue` in the output files.  
 
