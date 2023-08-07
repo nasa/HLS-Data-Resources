@@ -1,6 +1,7 @@
 07-28-2023
 
-- Updated the authentication with earhaccess
+- Updated the authentication with [`earthaccess`](https://github.com/nsidc/earthaccess)
+
 - Updated the quality filtering workflow
 - Resolved the error in output creation due to Tiled option
 - Added the Scale_factor and add_offset to the unscaled outputs
