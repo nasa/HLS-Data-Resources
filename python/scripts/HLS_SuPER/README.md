@@ -20,13 +20,14 @@ NASA's Land Processes Distributed Active Archive Center (LP DAAC) archives and d
 
 This tutorial has been tested on Windows and MacOS using the specifications identified below.  
 
-- **Python Version 3.7**  
+- **Python Version 3.11**  
   - `shapely`  
   - `geopandas`  
   - `gdal`  
   - `rasterio`  
   - `pyproj`  
-  - `requests`  
+  - `requests`
+  - `earthaccess`
 If exporting to `nc4` or `zarr`:  
     - `xarray`  
     - `netCDF4`  
@@ -47,7 +48,7 @@ It is recommended to use [Conda](https://conda.io/docs/), an environment manager
 Using your preferred command line interface (command prompt, terminal, cmder, etc.) type the following to create a compatible python environment:  
 
 ```None
-> conda create -n hls -c conda-forge --yes python=3.9 gdal rasterio=1.2 shapely geopandas pyproj requests xarray netcdf4 zarr  
+> conda create -n hls -c conda-forge --yes python=3.11 gdal rasterio shapely geopandas pyproj requests xarray netcdf4 zarr earthaccess
 ```  
 
 ```None
@@ -251,7 +252,7 @@ If you selected nc4 or Zarr as the output file format, the following naming conv
 **Voice:** +1-866-573-3222  
 **Organization:** Land Processes Distributed Active Archive Center (LP DAAC)  
 **Website:** [https://lpdaac.usgs.gov/](https://lpdaac.usgs.gov/)  
-**Date last modified:** 07-28-2023  
+**Date last modified:** 08-22-2023  
 
 ¹KBR, Inc., contractor to the U.S. Geological Survey, Earth Resources Observation and Science (EROS) Center,  
  Sioux Falls, South Dakota, USA. Work performed under USGS contract G15PD00467 for LP DAAC².  
