@@ -26,7 +26,7 @@ Instructions for setting up a compatible environment for accessing HLS data are 
 - [HLSS30 V2 Product Page](https://www.doi.org/10.5067/HLS/HLSS30.002)  
 - [HLS on Earthdata Search](https://search.earthdata.nasa.gov/search?q=%22HLSS30%22)  
 - [HLS V2 User Guide](https://lpdaac.usgs.gov/documents/1326/HLS_User_Guide_V2.pdf)  
-- [HLS Data Resources Repository](https://github.com/nasa/HLS-Data-Resources)  
+- [LP DAAC Data Resources Repository](https://github.com/nasa/LPDAAC-Data-Resources)  
 
 ## Contact Info  
 
