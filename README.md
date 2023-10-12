@@ -10,6 +10,7 @@ Below are data use resources available HLS data.
 |----|---------|-------|------------------|
 | HLS_Tutorial | [Python Notebook](python/tutorials/HLS_Tutorial.ipynb) | Tutorial demonstrating how to search for, access, and process HLS data | [earthaccess](https://github.com/nsidc/earthaccess) |
 | HLS SuPER Script | [Python Script](python/scripts/HLS_SuPER/) | Find, download, and subset HLS data from a command line executable | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
+| HLS Bulk Download Bash Script | [Bash Script](bash/hls-bulk-download/)| Find and download | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
 
 ## HLS Background
 
