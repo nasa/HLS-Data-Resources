@@ -28,11 +28,11 @@ A netrc file containing your NASA Earthdata Login credentials is needed for the 
 machine urs.earthdata.nasa.gov login <EDL Username> password <EDL Password>
 ```
 
-where `<EDL Username>` is the user's Earthdata Login username and `<EDL Passwor>` is the user's Earthdata Login password.
+where `<EDL Username>` is the user's Earthdata Login username and `<EDL Password>` is the user's Earthdata Login password.
 
 ### 3. Get `getHLS.sh` Script
 
-[Download](https://git.earthdata.nasa.gov/rest/api/latest/projects/LPDUR/repos/hls-bulk-download/archive?format=zip) or clone the [HLS-Bulk-Download](https://git.earthdata.nasa.gov/projects/LPDUR/repos/hls-bulk-download/browse) to a local directory.
+[Download](https://github.com/nasa/HLS-Data-Resources/archive/refs/heads/main.zip) or clone the [HLS-Data-Resources Repository](https://github.com/nasa/HLS-Data-Resources.git) to a local directory.
 
 ### 4. Bash shell and File Permissions
 
@@ -138,4 +138,4 @@ The script has three additional parameters that can be modified to either refine
 
 **Author:** Dr. Junchang Ju (Made available by NASA's LP DAAC)  
 **Contact:** LPDAAC@usgs.gov  
-**Date Last Modified:** See [CHANGELOG.md](./CHANGELOG.md)  
+**Date Last Modified:** See [CHANGELOG.md](../../CHANGELOG.md)  
