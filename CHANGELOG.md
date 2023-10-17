@@ -1,4 +1,18 @@
-07-28-2023
+10-12-2023  
+
+- Added the HLS Bulk Download Bash script to the repository
+  - Previous changes include:  
+
+    02-11-2022  
+
+    - getHLS.sh is updated to fix a bug.
+
+    08-30-2021
+
+    - Changed concept ids to query for HLS v2.0
+    - Updated readme dates to query granules from the month of July 2021. HLS v2.0 currently does not have granules available for earlier dates.
+
+07-28-2023  
 
 - Updated the authentication with [`earthaccess`](https://github.com/nsidc/earthaccess)
 
