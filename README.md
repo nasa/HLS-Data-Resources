@@ -19,7 +19,7 @@ The  Harmonized Landsat Sentinel-2 ([HLS](https://lpdaac.usgs.gov/data/get-start
 ## Prerequisites/Setup Instructions
 
 Instructions for setting up a compatible environment for accessing HLS data are linked to below.
-- [`Python` set up instructions](https://github.com/nasa/LPDAAC-Data-Resources/setup/setup_instructions.md)
+- [`Python` set up instructions](https://github.com/nasa/LPDAAC-Data-Resources/blob/main/setup/setup_instructions_python.md)
 
 ## Helpful Links  
 
@@ -35,6 +35,6 @@ Email: LPDAAC@usgs.gov
 Voice: +1-866-573-3222  
 Organization: Land Processes Distributed Active Archive Center (LP DAAC)¹  
 Website: <https://lpdaac.usgs.gov/>  
-Date last modified: 05-15-2023  
+Date last modified: 11-09-2023  
 
 ¹Work performed under USGS contract G15PD00467 for NASA contract NNG14HH33I.  
