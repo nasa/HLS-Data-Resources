@@ -1,3 +1,7 @@
+01-11-2023
+
+- Added The HLS R Tutorial
+
 10-12-2023  
 
 - Added the HLS Bulk Download Bash script to the repository
