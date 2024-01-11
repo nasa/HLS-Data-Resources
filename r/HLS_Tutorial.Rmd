@@ -1,0 +1,791 @@
+---
+title: "Getting Started with Cloud-Native Harmonized Landsat Sentinel-2 (HLS) Data in R"
+output:
+  html_document:
+    df_print: paged
+    fig_caption: yes
+    theme: paper
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  word_document:
+    toc: yes
+    toc_depth: '2'
+theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(comment = NA)
+knitr::opts_knit$set(root.dir = dirname(rprojroot::find_rstudio_root_file()))
+```
+
+------------------------------------------------------------------------
+
+**This tutorial demonstrates how to work with the HLS Landsat 8 (HLSL30.002) and Sentinel-2 (HLSS30.002) data products in R.** 
+
+The Harmonized Landsat Sentinel-2
+[(HLS)](https://lpdaac.usgs.gov/data/get-started-data/collection-overview/missions/harmonized-landsat-sentinel-2-hls-overview)
+project is a NASA initiative aiming to produce a consistent, harmonized
+surface reflectance product from Landsat 8 and Sentinel-2 data acquired
+by the Operational Land Imager (OLI) and Multi-Spectral Instrument (MSI)
+aboard Landsat 8 and Sentinel-2 satellites, respectively. Using sets of
+algorithms, all the necessary radiometric, spectral, geometric, and
+spatial corrections have been applied to make HLS into seamless
+timeseries that are stackable and comparable.\
+Dense timeseries of HLS are creating unique and exciting opportunities
+to monitor, map dynamics in land surface properties with unprecedented
+spatial detail. Numerous studies such as land cover change, agricultural
+management, disaster response, water resources, and vegetation phenology
+will vastly benefit from higher temporal resolution of this dataset.
+
+NASA's Land Processes Distributed Active Archive Center (LP DAAC)
+archives and distributes HLS products in the LP DAAC Cumulus cloud
+archive as Cloud Optimized GeoTIFFs (COG). The primary objective of this
+tutorial is to show how to query and subset HLS data using the NASA
+CMR-STAC application programming interface (API). Using cloud hosted
+publicly available archive from LP DAAC Cumulus cloud, you will not need
+to download HLS source data files for your research needs anymore. STAC
+allows you to subset your desired data collection by region, time, and
+band. Therefore, you will only download the data you really want.
+
+------------------------------------------------------------------------
+
+### Use Case Example
+
+In this tutorial, a case study is used to show how to process (calculate
+NDVI and quality filtering), visualize, and calculate statistics for an
+NDVI time series derived from HLS data over a region of interest. The
+tutorial also shows how to export the statistics so you will have all of
+the information you need for your area of interest without having to
+download the source data files. We looked at multiple agricultural
+fields in the Central Valley of California in the United States as an
+example to show how to interact with HLS data.
+
+#### Products Used:	
+	
+**1. Daily 30 meter (m) global HLS Sentinel-2 Multi-spectral Instrument Surface Reflectance - [HLSS30.002](https://doi.org/10.5067/HLS/HLSS30.002)**    
+   **Science Dataset (SDS) layers:**    
+    - B8A (NIR Narrow)    
+    - B04 (Red)    
+    - Fmask (Quality)  
+
+**2. Daily 30 meter (m) global HLS Landsat-8 OLI Surface Reflectance - [HLSL30.002](https://doi.org/10.5067/HLS/HLSL30.002)**  
+  **Science Dataset (SDS) layers:**  
+    - B05 (NIR)  
+    - B04 (Red)  
+    - Fmask (Quality) 
+
+------------------------------------------------------------------------
+
+### Topics Covered in This Tutorial
+
+1.  **Getting Started**\
+    1a. Load Required Libraries\
+    1b. Set Up the Working Directory\
+2.  **CMR-STAC API: Searching for Items**\
+    2a. Collection Query\
+    2b. Spatial Query Search Parameter\
+    2c. Temporal Query Search Parameter\
+    2d. Submit a Query for Our Search Criteria\
+3.  **Accessing and Interacting with HLS Data**\
+    3a. Subset by Band\
+    3b. Subset HLS COGs Spatially and Stack HLS Data Layers\
+4.  **Processing HLS Data**\
+    4a. Calculate NDVI\
+    4b. Quality Filtering\
+    4c. Visualize Quality Filtered Stacked Time Series\
+    4d. Export Statistics\
+5.  **Export Output to GeoTIFF**
+
+------------------------------------------------------------------------
+
+### Prerequisites:
+
+-   R and RStudio are required to execute this tutorial. Installation
+    details can be found
+    [here](https://www.rstudio.com/products/rstudio/download/#download).
+
+-   This tutorial has been tested on Windows using R Version 4.0.5 and
+    RStudio version 1.2.5033.
+
+-   A [NASA Earthdata Login](https://urs.earthdata.nasa.gov/) account is
+    required to access the data used in this Tutorial. You can create an
+    account [here](https://urs.earthdata.nasa.gov/users/new).
+
+-   Setting up a netrc file:
+
+    -   This tutorial leverages a netrc file storing your Earthdata
+        login credentials for authentication. This file is assumed to be
+        stored in the user profile directory on Window OS or in the home
+        directory on Mac OS. Run the chunk below (earthdata_netrc_setup.R) 
+        to ensure you have the proper netrc file set up. If you are prompted 
+        for your NASA Earthdata Login Username and Password, hit enter once you 
+        have submitted your credentials. If neither HOME nor Userprofile are
+        recognized by R, the current working directory is used.
+    -   If you want to manually create your own netrc file, download the .netrc
+        file template, add your credentials, and save to your Userprofile/HOME
+        directory. You should also make sure that both HOME
+        directory and Userprofile directories are as same as a directory
+        you are saving the .netrc. To do that run `Sys.setenv("HOME" = "YOUR DIRECTORY")`
+        and `Sys.setenv("userprofile" = "YOUR DIRECTORY")`.
+
+```{r, warning = FALSE, message = FALSE, results= "hide"}
+# source("Scripts/earthdata_netrc_setup.R")
+```
+    
+------------------------------------------------------------------------
+
+### Procedures:
+
+#### Getting Started:
+
+  - [Clone](https://git.earthdata.nasa.gov/scm/lpdur/hls_tutorial_r.git) or [download](https://git.earthdata.nasa.gov/rest/api/latest/projects/LPDUR/repos/hls_tutorial_r/archive?format=zip) HLS_Tutorial_R Repository from the LP DAAC Data User Resources Repository.  
+
+  - When you open this Rmarkdown notebook in RStudio, you can click the little green "Play" button in each grey code chunk to execute the code. The result can be printed either in the R Console or inline in the RMarkdown notebook, depending on your RStudio preferences. 
+
+#### Environment Setup: 
+
+#### 1. Check the version of R by typing `version` into the console and RStudio by typing `RStudio.Version()` into the console and update them if needed.
+
+-   Windows
+
+    -   Install and load installr:
+
+        -   `install.packages("installr");library(installr)`\
+
+    -   Copy/Update the existing packages to the new R installation:
+
+        -   `updateR()`
+
+    -   Open RStudio, go to Help \> Check for Updates to install newer
+        version of RStudio (if available).
+
+-   Mac
+
+    -   Go to <https://cloud.r-project.org/bin/macosx/>.\
+    -   Download the latest release (R-4.0.1.pkg) and finish the
+        installation.
+    -   Open RStudio, go to Help \> Check for Updates to install newer
+        version of RStudio (if available).
+    -   To update packages, go to Tools \> Check for Package Updates. If
+        updates are available, select All, and click Install Updates.
+
+#### 2. Required packages          
+
+-   **Required packages:**
+
+    -   `terra`
+    -   `imager`
+    -   `leaflet`  
+    -   `jsonlite`  
+    -   `sp`   
+    -   `rasterVis`  
+    -   `httr`  
+    -   `ggplot2`  
+    -   `RColorBrewer`  
+    -   `dygraphs`
+    -   `xts`  
+    -   `xml2`  
+    -   `lubridate`  
+    -   `DT`                           
+  
+Run the cell below to identify any missing packages to install, and then load 
+all of the required packages.
+
+```{r, warning = FALSE, message = FALSE}
+packages <- c('terra','jsonlite','sp','httr',
+              'rasterVis','ggplot2','magrittr','RColorBrewer','xml2','dygraphs',
+              'xts','lubridate','DT','rmarkdown', 'rprojroot','imager')
+
+# Identify missing (not installed) packages
+new.packages = packages[!(packages %in% installed.packages()[,"Package"])]
+
+# Install new (not installed) packages
+if(length(new.packages)) install.packages(new.packages, repos='http://cran.rstudio.com/') else print('All required packages are installed.')
+```
+
+------------------------------------------------------------------------
+
+# 1. Getting Started
+
+## 1a. Load Required Libraries
+
+Next load all packages using `library()` function.
+
+```{r, warning= FALSE, message=FALSE}
+invisible(lapply(packages, library, character.only = TRUE))
+```
+
+> IMPORTANT: At the time of writing this tutorial, the `leaflet` package available 
+on CRAN did not support `terra` objects. A GitHub pull request has been 
+[submitted](https://github.com/rstudio/leaflet/pull/808). To get the leaflet-based 
+visuals to work in this notebook, users will need to remove their current 
+`leaflet` package. Next users will re-install the `leaflet` package using a fork 
+repository of the code submitted for the pull request. **Run the below cell after
+removing the `leaflet` package**
+
+```{r, warning= FALSE, message=FALSE}
+remotes::install_github("https://github.com/rhijmans/leaflet")
+library(leaflet)
+```
+
+------------------------------------------------------------------------
+
+## 1b. Set Up the Working Directory
+
+Create an output directory for the results.
+
+```{r}
+# Create an output directory if it doesn't exist
+outDir <- file.path("data", "R_Output", fsep="/")
+suppressWarnings(dir.create(outDir)) 
+```
+
+Next, assign the LPCLOUD STAC Search URL to a static variable.
+
+```{r}
+search_URL <- 'https://cmr.earthdata.nasa.gov/stac/LPCLOUD/search'
+``` 
+
+------------------------------------------------------------------------
+
+# 2. CMR-STAC API: Searching for Items
+
+We will use the LPCLOUD STAC search endpoint to query the HLS data by
+region of interest and time period of interest. In order to retrieve
+STAC Items that match your criteria, you need to define your query
+parameters, which we will walk through below.
+
+To learn how to navigate through the structure of a CMR-STAC Catalog and
+define Search parameters, see [Getting Started with NASA's CMR-STAC
+API](https://git.earthdata.nasa.gov/projects/LPDUR/repos/data-discovery---cmr-stac-api/browse).
+Information on the specifications for adding parameters to a search
+query can be found
+[here](https://github.com/radiantearth/stac-api-spec/tree/master/item-search#query-parameters-and-fields).
+
+------------------------------------------------------------------------
+
+## 2a. Collection Query
+
+We will need to assign the lists one or more Collection IDs
+(Product shortnames) we want to include in the search query to a variable. 
+Only Items in one of the provided Collections will be searched. Here, we are
+interested in both HLS Landsat-8 and Sentinel-2 collections. To learn
+how to access Collection IDs in CMR-STAC visit [Getting Started with
+NASA's CMR-STAC
+API](https://git.earthdata.nasa.gov/projects/LPDUR/repos/data-discovery---cmr-stac-api/browse).
+
+A list of one or more Collection IDs (Product shortnames) is assigned to a 
+variable to be included in the search query. Only Items in one of the provided 
+Collections will be searched. Here, we are interested in both HLS Landsat-8 and 
+Sentinel-2 collections. To learn how to access the IDs for the collections in 
+CMR-STAC visit [Getting Started with NASA's CMR-STAC API](https://git.earthdata.nasa.gov/projects/LPDUR/repos/data-discovery---cmr-stac-api/browse).
+
+```{r}
+HLS_col <- list("HLSS30.v2.0", "HLSL30.v2.0")
+```
+
+------------------------------------------------------------------------
+
+## 2b. Spatial Query Search Parameter
+
+We can assign our spatial region of interest by loading a GeoJSON file using the 
+`terra` package. An example GeoJSON file is supplied in the 'Data' directory of 
+the 'hls_tutorial_r' repository named `FieldBoundary.geojson`. Read the file in 
+and use it to perform the spatial subset.
+
+```{r, results= "hide"}
+cropland_geojson <- terra::vect("data/Field_Boundary.geojson")
+```
+
+Then we can use the `leaflet` package to plot the agricultural fields boundary on top 
+of a ESRI world imagery basemap. 
+
+```{r}
+leaflet() %>% 
+  addPolygons(data = cropland_geojson, fill = FALSE) %>% 
+  addProviderTiles(providers$Esri.WorldImagery) %>% 
+  addMiniMap(zoomLevelFixed = 5)
+```
+
+This map lets us visualize our study area (Region of Interest (ROI)), which is important to
+confirm. But when we actually want to search the CMR-STAC for spatial
+subsetting, we'll need a parameter called a "bounding box", indicated by
+the lower left and upper right coordinates of our study area. Below, we
+can use the `terra` package to extract the extent of input GeoJSON so
+we can use it to create spatial search parameters.
+
+```{r}
+roi <- terra::ext(cropland_geojson)
+cropland_bbox <- paste(roi[1], roi[3], roi[2], roi[4], sep = ',')
+```
+
+------------------------------------------------------------------------
+
+## 2c. Temporal Query Search Parameter
+
+Next, we will need to define a temporal search query parameter. In our example, 
+we will set the time period of interest for two months of August and September 2021. 
+Note that the temporal ranges should be specified as a pair of date-time values 
+separated by comma (,) or forward slash (/). Each date-time value must have the 
+format of`YYYY-MM-DDTHH:MM:SSZ`. Additional information on setting temporal 
+searches can be found in the [NASA CMR Documentation](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html#temporal-range-searches).
+
+```{r}
+cropland_datetime <- '2021-08-01T00:00:00Z/2021-09-30T23:59:59Z'   # YYYY-MM-DDTHH:MM:SSZ/YYYY-MM-DDTHH:MM:SSZ
+```
+
+------------------------------------------------------------------------
+
+## 2d. Submit a Query for Our Search Criteria
+
+Now we are all prepared to submit a request to the CMR-STAC endpoint! We
+will do this using the `httr` package. The output will show all the
+available data matching our search criteria based on our datetime and
+bounding box.
+
+```{r}
+cropland_search_body <- list(limit=100,
+             datetime=cropland_datetime,
+             bbox= cropland_bbox,
+             collections= HLS_col)
+
+cropland_search_req <- httr::POST(search_URL, body = cropland_search_body, encode = "json") %>% 
+  httr::content(as = "text") %>% 
+  fromJSON()
+cat('There are',cropland_search_req$numberMatched, 'features matched our request.')
+```
+
+Now we can look at the name fields in the output.
+
+```{r}
+names(cropland_search_req)
+```
+
+Detailed information about the feature in our response can be found in
+`features` field. Let's select the first feature and view its content.
+We can print out the output in a "pretty" json format.
+
+```{r, attr.output='style="max-height: 300px;"'}
+search_features <- cropland_search_req$features
+Feature1 <- search_features[1,]
+Feature1 %>% 
+  jsonlite::toJSON(auto_unbox = TRUE, pretty = TRUE) 
+```
+
+Next, let's load the browse image to get a quick view of the first
+feature.
+
+```{r}
+browse_image_url <- Feature1$assets$browse$href
+
+browse <-load.image(browse_image_url)
+plot(browse)
+```
+
+Our first view of NASA data from the cloud, right here in RStudio!
+
+As you can see in our image, there is quite a bit of cloud cover. Cloud
+cover is a property we can explore for each STAC Item using 'eo:cloud_cover' 
+property. Also recall that each STAC Item in this case, contains multiple data 
+assets. Therefore, the cloud cover percentage that is returned applies to all 
+data assets associated with the STAC Item.
+
+```{r, attr.output='style="max-height: 200px;"'}
+for (i in row.names(search_features)){
+  cc <- search_features[i,]$properties$`eo:cloud_cover`
+  d <- search_features[i,]$properties$datetime
+  cat('Cloud Coverage of Feature ',i, 'Captured on ', d , 'Is: ' , cc , 'Percent' ,'\n')
+}
+```
+
+------------------------------------------------------------------------
+
+# 3. Accessing and Interacting with HLS Data
+
+This section will demonstrate how to leverage the FieldBoundary.geojson boundaries 
+to perform a spatial subset as well as identify the bands we are interested in and 
+access those data.
+
+First, set up rgdal configurations to access the cloud assets that we are interested in.
+You can learn more about these configuration options [here](https://trac.osgeo.org/gdal/wiki/ConfigOptions). 
+
+```{r, results= "hide"}
+setGDALconfig("GDAL_HTTP_UNSAFESSL", value = "YES")
+setGDALconfig("GDAL_HTTP_COOKIEFILE", value = ".rcookies")
+setGDALconfig("GDAL_HTTP_COOKIEJAR", value = ".rcookies")
+setGDALconfig("GDAL_DISABLE_READDIR_ON_OPEN", value = "EMPTY_DIR")
+setGDALconfig("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", value = "TIF")
+```
+
+------------------------------------------------------------------------
+
+## 3a. Subset assets by Band
+
+To subset assets by band, we will filter bands to include the NIR, Red, and
+Quality (Fmask) layers in the list of links to access. Below you can
+find the different band numbers for each of the two products. Additional
+information on HLS band allocations can be found [here](https://lpdaac.usgs.gov/documents/1118/HLS_User_Guide_V2.pdf).
+
+-   Sentinel 2:
+
+    -   "narrow" NIR = B8A
+    -   Red = B04
+    -   Quality = Fmask
+
+-   Landsat 8:
+
+    -   NIR = B05
+    -   Red = B04
+    -   Quality = Fmask
+
+Below, we'll make a searchable data table including links to assets. The `granule_list` 
+object is defined to store these links. Our final step will be a searchable data table!
+
+```{r}
+granule_list <- list()
+n <- 1
+for (item in row.names(search_features)){                       # Get the NIR, Red, and Quality band layer names
+  if (search_features[item,]$collection == 'HLSS30.v2.0'){
+    ndvi_bands <- c('B8A','B04','Fmask')
+  }
+  else{
+    ndvi_bands <- c('B05','B04','Fmask')
+  }
+  for(b in ndvi_bands){
+    f <- search_features[item,]
+    b_assets <- f$assets[[b]]$href
+    
+    df <- data.frame(Collection = f$collection,                    # Make a data frame including links and other info
+                     Granule_ID = f$id,
+                     Cloud_Cover = f$properties$`eo:cloud_cover`,
+                     band = b,
+                     Asset_Link = b_assets, stringsAsFactors=FALSE)
+    granule_list[[n]] <- df
+    n <- n + 1
+  }
+}
+
+# Create a searchable datatable
+search_df <- do.call(rbind, granule_list)
+DT::datatable(search_df)
+```
+
+Next, we'll want to remove the items with too much cloud coverage. We will remove 
+items over 30% cloud cover here.
+
+```{r}
+search_df <- search_df[search_df$Cloud_Cover < 30, ]
+```
+
+------------------------------------------------------------------------
+
+## 3b. Subset HLS COGs Spatially and Stack HLS Data Layers
+
+Accessing files in the cloud requires you to authenticate using your NASA Earthdata 
+Login account. In the prerequisite section of this tutorial, a proper netrc file 
+has been set up by calling `earthdata_netrc_setup.R` script.
+
+```{r, echo = FALSE, results='hide'}
+cat('The netrc file can be found in:', Sys.getenv('HOME'))
+```
+
+Below, convert the GeoJSON projection from (EPSG: 4326) into the native projection 
+of HLS, UTM (aligned to the Military Grid Reference System). This must be done 
+in order to use the Region of Interest (ROI) to subset the COG files.
+If you have trouble running the code chunk below, make sure your credentials are 
+entered correctly in the created netrc file.
+
+```{r, warning=FALSE}
+crs(cropland_geojson)
+coordinate_reference <- terra::rast(paste0('/vsicurl/',search_df$Asset_Link[1]))      # Extract the CRS from one of the assets
+crs(coordinate_reference)
+
+cropland_geojson_utm <- terra::project(cropland_geojson, crs(coordinate_reference)) # Transfer CRS
+crs(cropland_geojson_utm)
+```
+
+Below, we create a list of raster layers for each of our bands of interest 
+(i.e., Red, NIR, and Fmask). Next each band is read into the memory and then 
+cropped to our area of interest. The Cropped raster will be stacked and  We'll use 
+these stacks to calculate Normalized Difference Vegetation Index (NDVI) and mask 
+for cloud contamination. 
+Note that the `raster` function is making a separate 
+request for each data layer located in the Cumulus cloud archive. This takes time,
+and the more data layers we have in the time series, the longer this cell takes to
+run.  
+
+```{r, warning=FALSE, results= "hide"}
+red_stack <- nir_stack <- fmask_stack <- date_list <- list()
+# Add progress bar
+pb = txtProgressBar(min = 0, max = length(search_df$band), initial = 0, style = 3)
+l <- m <- n  <- 0
+for (row in seq(length(search_df$band))){
+  setTxtProgressBar(pb,row)
+  if (search_df$band[row] == 'B04'){
+    l = l+1
+    red <- terra::rast(paste0('/vsicurl/', search_df$Asset_Link[row]))
+    red_crop <- terra::mask(terra::crop(red, terra::ext(cropland_geojson_utm)), cropland_geojson_utm)
+    red_stack[[l]] <- red_crop
+    
+    doy_time = strsplit(sources(red), "[.]")[[1]][14]
+    doy = substr(doy_time, 1, 7)
+    date <- as.Date(as.integer(substr(doy,5,7)), origin = paste0(substr(doy,1,4), "-01-01"))
+    
+    if (strsplit(sources(red), "[.]")[[1]][12] == 'S30'){
+      date_list[[l]] <- paste0('S',as.character(date))
+    }else{
+      date_list[[l]] <- paste0('L',as.character(date))
+    }
+    
+    rm (red, red_crop)
+  }else if (search_df$band[row] == 'Fmask'){
+    m = m+1
+    fmask <- terra::rast(paste0('/vsicurl/', search_df$Asset_Link[row]))
+    fmask_crop <- terra::mask (terra::crop(fmask, terra::ext(cropland_geojson_utm)), cropland_geojson_utm)
+    fmask_stack[[m]] <-  fmask_crop
+    rm(fmask, fmask_crop)
+  }else{
+    n = n+1
+    nir <- terra::rast(paste0('/vsicurl/', search_df$Asset_Link[row]))
+    nir_crop <- terra::mask (terra::crop(nir, terra::ext(cropland_geojson_utm)), cropland_geojson_utm)
+    nir_stack[[n]] <- nir_crop
+    rm(nir, nir_crop)
+  }
+}
+close(pb)
+```
+
+Now, the cropped and stacked rasters are loaded into memory without being 
+downloaded. Running the code below should confirm this is true.
+
+```{r}
+inMemory(nir_stack[[1]])
+```
+
+------------------------------------------------------------------------
+
+# 4. Processing HLS Data
+
+Now we can start asking our science questions. First we define the NDVI function 
+and then execute it on the data loaded into memory. After that, we can perform 
+quality filtering to screen out any poor-quality observations.
+
+## 4a. Calculate NDVI
+
+Create a function to calculate NDVI.
+
+```{r}
+calculate_NDVI <- function(nir, red){
+  ndvi <- (nir-red)/(nir+red)
+  return(ndvi)
+}
+```
+
+Now we can calculate NDVI from stacked Red and NIR rasters. We will
+create layer names from the dates the data is captured, along with the
+first letter of **L** and **S** shows which sensor is data from.
+
+```{r, warning=FALSE}
+ndvi_stack <- list()
+for (i in 1:length(nir_stack)){ 
+  # Calculate NDVI 
+  ndvi_stack[[i]] <- calculate_NDVI(nir_stack[[i]], red_stack[[i]])  
+  # Exclude the Inf and -Inf from NDVI
+  ndvi_stack[[i]][ndvi_stack[[i]] == Inf] <- NA
+  ndvi_stack[[i]][ndvi_stack[[i]] == -Inf] <- NA
+  names(ndvi_stack[[i]]) <- date_list[[i]]
+}
+ndvi_stacks <- terra::rast(ndvi_stack)                                     # Create a stack of NDVI
+
+```
+
+Now we plot! Let's star with the first item in NDVI time series.
+
+```{r, warning=FALSE, message=FALSE}
+# Create a color palette 
+pal <- colorNumeric(terrain.colors(n = 100), c(0,1) ,na.color = "transparent", reverse = TRUE)
+
+leaflet() %>% 
+    addProviderTiles(providers$Esri.WorldImagery) %>%
+    addRasterImage(ndvi_stacks[[1]], color = pal, opacity = 1) %>%
+    addPolygons(data = cropland_geojson, fill = FALSE) %>%
+    addMiniMap(zoomLevelFixed = 5) %>%
+    leaflet::addLegend(pal = pal, values = c(0,1), title = "NDVI")
+
+```
+
+------------------------------------------------------------------------
+
+## 4b. Quality Filtering
+
+Now we should do additional quality filtering.
+
+In HLS, both value of 0 and 64 in the Fmask layer indicate the pixel without cloud, 
+cloud shadow, water, or snow/ice. A value of 0 also shows climatology aerosol level 
+and 64 shows low aerosol level. We will use these values to mask out poor quality 
+pixels from the ndvi_stacks. HLS quality information can be found in section 6.5 
+of the [HLS V2.0 User Guide](https://lpdaac.usgs.gov/documents/1698/HLS_User_Guide_V2.pdf).
+
+Create a stack of masked rasters and mask poor quality pixels.
+
+```{r}
+# bits <- 8
+# vals <- list(0:(2**bits))
+# goodQF <- list()
+# for (v in vals){
+#   bitVal <- format(vals[v],'b').zfill(bits)
+#     if bitVal[4:7] == '000':
+#         goodQF.append(vals[v])
+#         print('\n' + str(vals[v]) + ' = ' + str(bitVal))
+```
+
+
+```{r, warning=FALSE}
+# mask_raster <- list()
+# ndvi_filtered <- list()
+# 
+# for (i in 1:length(fmask_stack)){
+#   mask_raster[[i]] <- fmask_stack[[i]]
+#   mask_raster[[i]][values(mask_raster[[i]])!= 0 || values(mask_raster[[i]])!= 64] <- NA
+#   ndvi_filtered[[i]] <- mask(ndvi_stacks[[i]], mask_raster[[i]], maskvalue=NA )
+#   names(ndvi_filtered[[i]]) <- names(ndvi_stacks[[i]])
+# }
+# ndvi_filtered_stacks <- terra::rast(ndvi_filtered)
+```
+
+------------------------------------------------------------------------
+
+## 4c.Visualize Stacked Time Series
+
+Now we can plot multiple layers to create an interactive NDVI time
+series map with `leaflet`. Click on the dates on the left side to view
+the layer.
+
+```{r, warning=FALSE, message=FALSE}
+
+base<-c('map<-leaflet()%>%
+            addProviderTiles(providers$Esri.WorldImagery) %>%
+            addMiniMap(zoomLevelFixed = 5) %>%')
+
+# make a string including the addRasterImage function for every layer in the raster stack
+X <- lapply(1:nlyr(ndvi_stacks), function(j){
+    paste(paste("addRasterImage(ndvi_stacks[[",j,"]],
+             colors = pal,
+             opacity=1,
+             group=names(ndvi_stacks[[",j,"]]))", sep=""),"%>% \n")})
+
+X <- do.call(paste, X)
+
+controls<-"addLayersControl(baseGroups=names(ndvi_stacks),
+               options = layersControlOptions(collapsed=F), position = 'topleft')%>%"
+
+legend <- "leaflet::addLegend(pal = pal, values = c(0,1), title = 'NDVI')"
+
+final <- paste(base, X, controls, legend ,sep="\n")
+eval(parse(text=final))
+map
+```
+
+Above, the time series show the changes in NDVI over the two months of September 
+and August 2021. The NDVI values over these agricultural fields are high and stable 
+and then they drastically decrease showing that they are cultivated before the send of September. 
+
+
+
+------------------------------------------------------------------------
+
+## 4d. Export Statistics
+
+Below, plot the time series as boxplots showing the distribution of NDVI values 
+for our farm fields.
+
+```{r, fig.width=15}
+raster::boxplot(ndvi_stacks, col=c('olivedrab3'),  main='NDVI Time Series', ylab='NDVI', names = names(ndvi_stacks), las=2)
+```
+
+Next, calculate the statistics for each observation and export to CSV. Quality 
+filtered raster stack is used to calculate the statistics.
+
+```{r}
+ndvi_mean <- terra::global(ndvi_stacks, 'mean', na.rm=TRUE)
+ndvi_max <- terra::global(ndvi_stacks, 'max', na.rm=TRUE)
+ndvi_min <- terra::global(ndvi_stacks, 'min', na.rm=TRUE)
+ndvi_sd <- terra::global(ndvi_stacks, 'sd', na.rm=TRUE)
+#ndvi_median <- terra::global(ndvi_stacks, 'median', na.rm=TRUE)    # the global function does not have median
+```
+
+Make interactive plots of raster statistics using `dygraphs` library. The date is 
+formatted using `lubridate` package and `xts` package is used to transform the 
+dataframe to the xts format.
+
+```{r}
+stats <- data.frame(
+  Date=substr(names(ndvi_stacks), 2,11),
+  NDVI_Max = ndvi_max,
+  NDVI_Min = ndvi_min,
+  #NDVI_Median = ndvi_median,
+  NDVI_mean = ndvi_mean,
+  NDVI_SD = ndvi_sd
+)
+stats$Date <- ymd(stats$Date)                      # reformat the date
+variables = xts(x=stats[,-1], order.by=stats$Date) # Choose the cols with the variables
+dygraph(variables)
+```
+
+If you want to export these statistics, we can do so to a CSV file.
+
+```{r}
+stats_name <- file.path(outDir, "NDVI_Statistics.csv")
+write.csv(stats,stats_name)
+```
+
+------------------------------------------------------------------------
+
+# 5. Export Output to GeoTIFF
+
+Finally, if you want to capture the final output files locally on your
+machine, you can export the output files as GeoTIFFs.
+
+```{r, warning = FALSE}
+for (i in 1:length(ndvi_stacks)){
+  output_name <- file.path(outDir, paste0(names(ndvi_stacks[[i]]), "_NDVI.tif"))
+  terra::writeRaster(ndvi_stacks[[i]], output_name, overwrite = TRUE)
+}
+```
+
+The raster stack object can also be written to the disk.
+
+```{r, warning=FALSE}
+output_name <- file.path(outDir, "NDVI_stack.tif")
+terra::writeRaster(ndvi_stacks ,filename=output_name, overwrite=TRUE)
+```
+
+
+And we're done! You have successfully analyzed
+data in the cloud, exporting just the information you needed for your area 
+of interest rather than having to download everything.
+
+------------------------------------------------------------------------
+
+### Contact Information
+
+  **Material written by Mahsa Jami^1^ and Aaron Friesz^1^**  
+  Contact: [LPDAAC\@usgs.gov](mailto:LPDAAC@usgs.gov){.email}  
+  Voice: +1-866-573-3222  
+  Organization: Land Processes Distributed Active Archive Center (LP DAAC)  
+  Website: <https://lpdaac.usgs.gov/>\                   
+  Date last modified: 01-11-2023                
+  
+  ^1^ KBR, Inc., contractor to the U.S. Geological Survey, Earth Resources Observation and Science (EROS) Center, 
+  Sioux Falls, South Dakota, USA. Work performed under USGS contract G0121D0001 for LP DAAC^2^.
+  
+  ^2^ LP DAAC Work performed under NASA contract NNG14HH33I.
+
+
+
+
