@@ -57,7 +57,7 @@ band. Therefore, you will only download the data you really want.
 ### Use Case Example
 
 In this tutorial, a case study is used to show how to process (calculate
-NDVI and quality filtering), visualize, and calculate statistics for an
+NDVI), visualize, and calculate statistics for an
 NDVI time series derived from HLS data over a region of interest. The
 tutorial also shows how to export the statistics so you will have all of
 the information you need for your area of interest without having to
@@ -96,9 +96,8 @@ example to show how to interact with HLS data.
     3b. Subset HLS COGs Spatially and Stack HLS Data Layers\
 4.  **Processing HLS Data**\
     4a. Calculate NDVI\
-    4b. Quality Filtering\
-    4c. Visualize Quality Filtered Stacked Time Series\
-    4d. Export Statistics\
+    4b. Visualize Stacked Time Series\
+    4c. Export Statistics\
 5.  **Export Output to GeoTIFF**
 
 ------------------------------------------------------------------------
@@ -621,46 +620,7 @@ leaflet() %>%
 
 ------------------------------------------------------------------------
 
-## 4b. Quality Filtering
-
-Now we should do additional quality filtering.
-
-In HLS, both value of 0 and 64 in the Fmask layer indicate the pixel without cloud, 
-cloud shadow, water, or snow/ice. A value of 0 also shows climatology aerosol level 
-and 64 shows low aerosol level. We will use these values to mask out poor quality 
-pixels from the ndvi_stacks. HLS quality information can be found in section 6.5 
-of the [HLS V2.0 User Guide](https://lpdaac.usgs.gov/documents/1698/HLS_User_Guide_V2.pdf).
-
-Create a stack of masked rasters and mask poor quality pixels.
-
-```{r}
-# bits <- 8
-# vals <- list(0:(2**bits))
-# goodQF <- list()
-# for (v in vals){
-#   bitVal <- format(vals[v],'b').zfill(bits)
-#     if bitVal[4:7] == '000':
-#         goodQF.append(vals[v])
-#         print('\n' + str(vals[v]) + ' = ' + str(bitVal))
-```
-
-
-```{r, warning=FALSE}
-# mask_raster <- list()
-# ndvi_filtered <- list()
-# 
-# for (i in 1:length(fmask_stack)){
-#   mask_raster[[i]] <- fmask_stack[[i]]
-#   mask_raster[[i]][values(mask_raster[[i]])!= 0 || values(mask_raster[[i]])!= 64] <- NA
-#   ndvi_filtered[[i]] <- mask(ndvi_stacks[[i]], mask_raster[[i]], maskvalue=NA )
-#   names(ndvi_filtered[[i]]) <- names(ndvi_stacks[[i]])
-# }
-# ndvi_filtered_stacks <- terra::rast(ndvi_filtered)
-```
-
-------------------------------------------------------------------------
-
-## 4c.Visualize Stacked Time Series
+## 4b.Visualize Stacked Time Series
 
 Now we can plot multiple layers to create an interactive NDVI time
 series map with `leaflet`. Click on the dates on the left side to view
@@ -699,7 +659,7 @@ and then they drastically decrease showing that they are cultivated before the s
 
 ------------------------------------------------------------------------
 
-## 4d. Export Statistics
+## 4c. Export Statistics
 
 Below, plot the time series as boxplots showing the distribution of NDVI values 
 for our farm fields.
@@ -708,8 +668,7 @@ for our farm fields.
 raster::boxplot(ndvi_stacks, col=c('olivedrab3'),  main='NDVI Time Series', ylab='NDVI', names = names(ndvi_stacks), las=2)
 ```
 
-Next, calculate the statistics for each observation and export to CSV. Quality 
-filtered raster stack is used to calculate the statistics.
+Next, calculate the statistics for each observation and export to CSV. Raster stack is used to calculate the statistics.
 
 ```{r}
 ndvi_mean <- terra::global(ndvi_stacks, 'mean', na.rm=TRUE)
