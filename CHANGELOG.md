@@ -1,3 +1,9 @@
+01-19-2024
+
+- Added a retry loop to the [HLS_Tutorial.ipynb](https://github.com/nasa/HLS-Data-Resources/blob/main/python/tutorials/HLS_Tutorial.ipynb) to fix a `vsicurl` error users were getting
+- Made minor visual improvements to plots and cell outputs in [HLS_Tutorial.ipynb](https://github.com/nasa/HLS-Data-Resources/blob/main/python/tutorials/HLS_Tutorial.ipynb)
+- Updated readme
+
 10-12-2023  
 
 - Added the HLS Bulk Download Bash script to the repository

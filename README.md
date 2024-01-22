@@ -12,6 +12,8 @@ Below are data use resources available HLS data.
 | HLS SuPER Script | [Python Script](python/scripts/HLS_SuPER/) | Find, download, and subset HLS data from a command line executable | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
 | HLS Bulk Download Bash Script | [Bash Script](bash/hls-bulk-download/)| Find and download | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
 
+**Additionally, the [LPDAAC-Data-Resources](https://github.com/nasa/LPDAAC-Data-Resources) Repository has general resources associated with datasets hosted by the LP DAAC, as well as links to other repositories for specific datasets such as EMIT, ECOSTRESS, and GEDI.**
+
 ## HLS Background
 
 The  Harmonized Landsat Sentinel-2 ([HLS](https://lpdaac.usgs.gov/data/get-started-data/collection-overview/missions/harmonized-landsat-sentinel-2-hls-overview/)) project produces seamless, harmonized surface reflectance data from the Operational Land Imager (OLI) and Multi-Spectral Instrument (MSI) aboard Landsat and Sentinel-2 Earth-observing satellites, respectively. The aim is to produce seamless products with normalized parameters, which include atmospheric correction, cloud and cloud-shadow masking, geographic co-registration and common gridding, normalized bidirectional reflectance distribution function, and spectral band adjustment. This will provide global observation of the Earth’s surface every 2-3 days with 30 meter spatial resolution. One of the major applications that will benefit from HLS is agriculture assessment and monitoring, which is used as the use case for this tutorial.
@@ -19,6 +21,7 @@ The  Harmonized Landsat Sentinel-2 ([HLS](https://lpdaac.usgs.gov/data/get-start
 ## Prerequisites/Setup Instructions
 
 Instructions for setting up a compatible environment for accessing HLS data are linked to below.
+
 - [`Python` set up instructions](https://github.com/nasa/LPDAAC-Data-Resources/blob/main/setup/setup_instructions_python.md)
 
 ## Helpful Links  
@@ -31,10 +34,10 @@ Instructions for setting up a compatible environment for accessing HLS data are 
 
 ## Contact Info  
 
-Email: LPDAAC@usgs.gov  
+Email: <LPDAAC@usgs.gov>  
 Voice: +1-866-573-3222  
 Organization: Land Processes Distributed Active Archive Center (LP DAAC)¹  
 Website: <https://lpdaac.usgs.gov/>  
-Date last modified: 11-09-2023  
+Date last modified: 01-19-2023  
 
 ¹Work performed under USGS contract G15PD00467 for NASA contract NNG14HH33I.  
