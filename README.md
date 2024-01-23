@@ -22,10 +22,11 @@ The  Harmonized Landsat Sentinel-2 ([HLS](https://lpdaac.usgs.gov/data/get-start
 
 Instructions for setting up a compatible environment for accessing HLS data are linked to below.
 
-- [`Python` set up instructions](https://github.com/nasa/LPDAAC-Data-Resources/blob/main/setup/setup_instructions_python.md)
+- [Python set up instructions](https://github.com/nasa/LPDAAC-Data-Resources/blob/main/setup/setup_instructions_python.md)
 
 ## Helpful Links  
 
+- [LP DAAC GitHub](https://github.com/nasa/LPDAAC-Data-Resources)
 - [HLSL30 V2 Product Page](https://www.doi.org/10.5067/HLS/HLSL30.002)  
 - [HLSS30 V2 Product Page](https://www.doi.org/10.5067/HLS/HLSS30.002)  
 - [HLS on Earthdata Search](https://search.earthdata.nasa.gov/search?q=%22HLSS30%22)  
