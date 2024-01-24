@@ -1,3 +1,8 @@
+
+01-11-2023
+
+- Added The HLS R Tutorial
+
 01-19-2024
 
 - Added a retry loop to the [HLS_Tutorial.ipynb](https://github.com/nasa/HLS-Data-Resources/blob/main/python/tutorials/HLS_Tutorial.ipynb) to fix a `vsicurl` error users were getting
