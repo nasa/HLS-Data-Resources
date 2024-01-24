@@ -11,7 +11,7 @@ Below are data use resources available HLS data.
 | HLS Python Tutorial | [Python Notebook](python/tutorials/HLS_Tutorial.ipynb) | Tutorial demonstrating how to search for, access, and process HLS data in Python | [earthaccess](https://github.com/nsidc/earthaccess) |
 | HLS SuPER Script | [Python Script](python/scripts/HLS_SuPER/) | Find, download, and subset HLS data from a command line executable | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
 | HLS Bulk Download Bash Script | [Bash Script](bash/hls-bulk-download/)| Find and download | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
-|HLS R Tutorial | [R Markdown](r/HLS_Tutorial.Rmd) | Tutorial demonstrating how to search for, access, and process HLS data in R | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
+|HLS R Tutorial | [R Markdown](r/HLS_Tutorial.Rmd) | Tutorial demonstrating how to search for, access, and process HLS data in R | [CMR STAC API](https://cmr.earthdata.nasa.gov/stac) |
 
 **Additionally, the [LPDAAC-Data-Resources](https://github.com/nasa/LPDAAC-Data-Resources) Repository has general resources associated with datasets hosted by the LP DAAC, as well as links to other repositories for specific datasets such as EMIT, ECOSTRESS, and GEDI.**
 
