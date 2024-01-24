@@ -732,18 +732,15 @@ of interest rather than having to download everything.
 ------------------------------------------------------------------------
 
 ### Contact Information
-
-  **Material written by Mahsa Jami^1^ and Aaron Friesz^1^**  
+  
   Contact: [LPDAAC\@usgs.gov](mailto:LPDAAC@usgs.gov){.email}  
   Voice: +1-866-573-3222  
   Organization: Land Processes Distributed Active Archive Center (LP DAAC)  
   Website: <https://lpdaac.usgs.gov/>\                   
   Date last modified: 01-11-2023                
   
-  ^1^ KBR, Inc., contractor to the U.S. Geological Survey, Earth Resources Observation and Science (EROS) Center, 
-  Sioux Falls, South Dakota, USA. Work performed under USGS contract G0121D0001 for LP DAAC^2^.
-  
-  ^2^ LP DAAC Work performed under NASA contract NNG14HH33I.
+  Work performed under USGS contract G0121D0001 for LP DAAC^1^.
+  ^1^ LP DAAC Work performed under NASA contract NNG14HH33I.
 
 
 
