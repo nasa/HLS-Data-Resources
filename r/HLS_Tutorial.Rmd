@@ -115,25 +115,6 @@ example to show how to interact with HLS data.
     required to access the data used in this Tutorial. You can create an
     account [here](https://urs.earthdata.nasa.gov/users/new).
 
--   Setting up a netrc file:
-
-    -   This tutorial leverages a netrc file storing your Earthdata
-        login credentials for authentication. This file is assumed to be
-        stored in the user profile directory on Window OS or in the home
-        directory on Mac OS. Run the chunk below (earthdata_netrc_setup.R) 
-        to ensure you have the proper netrc file set up. If you are prompted 
-        for your NASA Earthdata Login Username and Password, hit enter once you 
-        have submitted your credentials. If neither HOME nor Userprofile are
-        recognized by R, the current working directory is used.
-    -   If you want to manually create your own netrc file, download the .netrc
-        file template, add your credentials, and save to your Userprofile/HOME
-        directory. You should also make sure that both HOME
-        directory and Userprofile directories are as same as a directory
-        you are saving the .netrc. To do that run `Sys.setenv("HOME" = "YOUR DIRECTORY")`
-        and `Sys.setenv("userprofile" = "YOUR DIRECTORY")`.
-
-```{r, warning = FALSE, message = FALSE, results= "hide"}
-# source("Scripts/earthdata_netrc_setup.R")
 ```
     
 ------------------------------------------------------------------------
@@ -190,7 +171,8 @@ example to show how to interact with HLS data.
     -   `xts`  
     -   `xml2`  
     -   `lubridate`  
-    -   `DT`                           
+    -   `DT`
+    -   `earthdatalogin`
   
 Run the cell below to identify any missing packages to install, and then load 
 all of the required packages.
@@ -198,7 +180,7 @@ all of the required packages.
 ```{r, warning = FALSE, message = FALSE}
 packages <- c('terra','jsonlite','sp','httr',
               'rasterVis','ggplot2','magrittr','RColorBrewer','xml2','dygraphs',
-              'xts','lubridate','DT','rmarkdown', 'rprojroot','imager')
+              'xts','lubridate','DT','rmarkdown', 'rprojroot','imager', 'earthdatalogin')
 
 # Identify missing (not installed) packages
 new.packages = packages[!(packages %in% installed.packages()[,"Package"])]
@@ -249,7 +231,14 @@ Next, assign the LPCLOUD STAC Search URL to a static variable.
 ```{r}
 search_URL <- 'https://cmr.earthdata.nasa.gov/stac/LPCLOUD/search'
 ``` 
+## 1c. Set Up the Authentification. 
 
+The earthdatalogin sets up authentication behind the scenes using environmental variables. 
+
+```{r}
+# While authentification is used needed immediately, it is good to set up in the beginning. 
+earthdatalogin::edl_netrc()
+```
 ------------------------------------------------------------------------
 
 # 2. CMR-STAC API: Searching for Items
@@ -484,14 +473,6 @@ search_df <- search_df[search_df$Cloud_Cover < 30, ]
 ------------------------------------------------------------------------
 
 ## 3b. Subset HLS COGs Spatially and Stack HLS Data Layers
-
-Accessing files in the cloud requires you to authenticate using your NASA Earthdata 
-Login account. In the prerequisite section of this tutorial, a proper netrc file 
-has been set up by calling `earthdata_netrc_setup.R` script.
-
-```{r, echo = FALSE, results='hide'}
-cat('The netrc file can be found in:', Sys.getenv('HOME'))
-```
 
 Below, convert the GeoJSON projection from (EPSG: 4326) into the native projection 
 of HLS, UTM (aligned to the Military Grid Reference System). This must be done 
