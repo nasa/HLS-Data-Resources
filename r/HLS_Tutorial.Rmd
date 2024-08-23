@@ -20,7 +20,7 @@ theme: lumen
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(comment = NA)
-knitr::opts_knit$set(root.dir = dirname(rprojroot::find_rstudio_root_file(path='r')))
+knitr::opts_knit$set(root.dir = dirname(rprojroot::find_rstudio_root_file()))
 ```
 
 ------------------------------------------------------------------------
@@ -57,7 +57,7 @@ band. Therefore, you will only download the data you really want.
 ### Use Case Example
 
 In this tutorial, a case study is used to show how to process (calculate
-NDVI), visualize, and calculate statistics for an
+NDVI), quality mask, visualize, and calculate statistics for an
 NDVI time series derived from HLS data over a region of interest. The
 tutorial also shows how to export the statistics so you will have all of
 the information you need for your area of interest without having to
@@ -97,7 +97,7 @@ example to show how to interact with HLS data.
 4.  **Processing HLS Data**\
     4a. Calculate NDVI\
     4b. Apply Quality Filtering\
-    4b. Visualize Stacked Time Series\
+    4c. Visualize Stacked Time Series\
     4d. Export Statistics\
     5.  **Export Output to GeoTIFF**
 
@@ -116,17 +116,20 @@ example to show how to interact with HLS data.
     required to access the data used in this Tutorial. You can create an
     account [here](https://urs.earthdata.nasa.gov/users/new).
 
-```
-    
 ------------------------------------------------------------------------
 
 ### Procedures:
 
 #### Getting Started:
 
-  - [Clone](https://git.earthdata.nasa.gov/scm/lpdur/hls_tutorial_r.git) or [download](https://git.earthdata.nasa.gov/rest/api/latest/projects/LPDUR/repos/hls_tutorial_r/archive?format=zip) HLS_Tutorial_R Repository from the LP DAAC Data User Resources Repository.  
+  - [Clone](https://github.com/nasa/HLS-Data-Resources.git) or 
+    [download](https://github.com/nasa/HLS-Data-Resources/archive/refs/heads/main.zip)
+    the HLS Data Resources Repository. 
 
-  - When you open this Rmarkdown notebook in RStudio, you can click the little green "Play" button in each grey code chunk to execute the code. The result can be printed either in the R Console or inline in the RMarkdown notebook, depending on your RStudio preferences. 
+  - When you open this Rmarkdown notebook in RStudio, you can click the little 
+    green "Play" button in each grey code chunk to execute the code. The result
+    can be printed either in the R Console or inline in the RMarkdown notebook,
+    depending on your RStudio preferences. 
 
 #### Environment Setup: 
 
@@ -148,7 +151,7 @@ example to show how to interact with HLS data.
 -   Mac
 
     -   Go to <https://cloud.r-project.org/bin/macosx/>.\
-    -   Download the latest release (R-4.0.1.pkg) and finish the
+    -   Download the latest release (R-4.4.1.pkg) and finish the
         installation.
     -   Open RStudio, go to Help \> Check for Updates to install newer
         version of RStudio (if available).
@@ -157,32 +160,21 @@ example to show how to interact with HLS data.
 
 #### 2. Required packages          
 
--   **Required packages:**
-
+    -   `rmarkdown`
+    -   `rstac`
     -   `terra`
     -   `imager`
     -   `leaflet`  
-    -   `jsonlite`  
-    -   `sp`   
-    -   `rasterVis`  
-    -   `httr`  
-    -   `ggplot2`  
-    -   `RColorBrewer`  
     -   `dygraphs`
     -   `xts`  
-    -   `xml2`  
     -   `lubridate`  
-    -   `DT`
     -   `earthdatalogin`
   
 Run the cell below to identify any missing packages to install, and then load 
 all of the required packages.
 
 ```{r, warning = FALSE, message = FALSE}
-packages <- c('terra','jsonlite','sp','httr','glue','tidyverse','dplyr', 'imager', 'utf8',
-              'rasterVis','ggplot2','magrittr','RColorBrewer','xml2','dygraphs',
-              'xts','lubridate','DT','rmarkdown', 'rprojroot','imager', 'earthdatalogin', 'leaflet','rstac')
-              
+packages <- c('rmarkdown','earthdatalogin', 'rstac','imager','lubridate','xts','dygraphs','leaflet','terra')              
 
 # Identify missing (not installed) packages
 new.packages = packages[!(packages %in% installed.packages()[,"Package"])]
@@ -201,19 +193,6 @@ Next load all packages using `library()` function.
 
 ```{r, warning= FALSE, message=FALSE}
 invisible(lapply(packages, library, character.only = TRUE))
-```
-
-> IMPORTANT: At the time of writing this tutorial, the `leaflet` package available 
-on CRAN did not support `terra` objects. A GitHub pull request has been 
-[submitted](https://github.com/rstudio/leaflet/pull/808). To get the leaflet-based 
-visuals to work in this notebook, users will need to remove their current 
-`leaflet` package. Next users will re-install the `leaflet` package using a fork 
-repository of the code submitted for the pull request. **Run the below cell after
-removing the `leaflet` package**
-
-```{r, warning= FALSE, message=FALSE}
-# remotes::install_github("https://github.com/rhijmans/leaflet")
-# library(leaflet)
 ```
 
 ------------------------------------------------------------------------
@@ -236,6 +215,7 @@ The earthdatalogin sets up authentication behind the scenes using environmental 
 # While authentification is used needed immediately, it is good to set up in the beginning. 
 earthdatalogin::edl_netrc()
 ```
+
 ------------------------------------------------------------------------
 
 # 2. CMR-STAC API: Searching for Items
@@ -259,6 +239,7 @@ endpoint, which we will connect to for our search.
 ```{r}
 s = stac("https://cmr.earthdata.nasa.gov/stac/LPCLOUD/")
 ```
+
 ------------------------------------------------------------------------
 
 ## 2a. Collection Query
@@ -324,7 +305,7 @@ Next, we will need to define a temporal search query parameter. In our example,
 we will set the time period of interest for two months of August and September 2021. 
 Note that the temporal ranges should be specified as a pair of date-time values 
 separated by comma (,) or forward slash (/). Each date-time value must have the 
-format of`YYYY-MM-DDTHH:MM:SSZ`. Additional information on setting temporal 
+format of`YYYY-MM-DDTHH:MM:SSZ` (ISO 8601). Additional information on setting temporal 
 searches can be found in the [NASA CMR Documentation](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html#temporal-range-searches).
 
 ```{r}
@@ -403,6 +384,7 @@ granule_id <- sapply(items$features, function(feature) feature$id)
 sf_items <- cbind(granule = granule_id, sf_items)
 View(sf_items)
 ```
+
 ------------------------------------------------------------------------
 ## 3a. Select Bands and Filter by Cloud Cover
 
@@ -569,7 +551,7 @@ names(ndvi_stack) <- sf_items$datetime
 ndvi_stacks <- terra::rast(ndvi_stack)
 ```
 
-Now we plot! Let's start with the first item in NDVI time series.
+Now we plot! Let's start with the first item in NDVI time series. 
 
 ```{r, warning=FALSE, message=FALSE}
 # Create a color palette 
@@ -583,6 +565,8 @@ leaflet() %>%
     leaflet::addLegend(pal = pal, values = c(0,1), title = "NDVI")
 
 ```
+
+If you get an from this chunk, please update to the latest version of `leaflet`.
 
 ------------------------------------------------------------------------
 
@@ -626,7 +610,6 @@ Open an fmask layer and plot it to see examples of the quality values.
 # Test fmask
 fmask <- fmask_stack[[23]]
 plot(fmask)
-
 ```
 
 We can select select the bits we want to mask from our analysis. In this case, we will mask
@@ -690,6 +673,7 @@ ndvi_masked <- mapply(function(x, y) {
 
 Right now ndvi_masked is a list of `SpatRaster` objects. We can stack it using the `rast` function
 to provide the expected format for the next steps.
+
 ```{r}
 ndvi_masked <- rast(ndvi_masked)
 ```
@@ -704,7 +688,6 @@ We can see that some of the water present has been masked out of the NDVI layer,
 our quality bit selection.
 
 ------------------------------------------------------------------------
-
 
 ## 4c.Visualize Stacked Time Series
 
