@@ -631,9 +631,7 @@ number set when converted to binary.
 5. Lastly, it returns the new mask layer we can use to filter our data.
 
 ```{r}
-# Filter based on quality - Only Keep Low/Clear Aerosol (bit 6 can be 1)
-
-
+# Filter based on quality
 build_mask <- function(fmask, selected_bit_nums){
   # Create a mask of all zeros
   mask <- rast(fmask, vals=0)
@@ -727,8 +725,13 @@ and then they drastically decrease showing that they are cultivated before the s
 We can plot the time series NDVI values as boxplots showing their distribution for our farm fields.
 
 ```{r}
+# Add Date Only Column
+sf_items$date <- sapply(sf_items$datetime, function(x) strsplit(x, "T")[[1]][1])
+# Set Plot Margins and Font Sizes
+par(mar = c(10, 6, 4, 2), cex.axis = 2, cex.lab = 2, cex.main = 2) # bottom, left, top, right
+# Create Boxplot
 terra::boxplot(ndvi_masked, col=c('olivedrab3'),  main='NDVI Time Series', ylab='NDVI',
-                names = names(ndvi_stacks), las=2, mar=c(10, 4, 4, 2))
+                names = sf_items$date, las=2)
 ```
 
 Next, calculate the statistics for each observation using built in statistics functions from `terra`.
@@ -753,7 +756,8 @@ stats <- data.frame(
 )
 stats$Date <- ymd_hms(sf_items$datetime) # convert string to date format (ISO 8601)
 variables = xts(x=stats[,-5], order.by=stats$Date) # Choose the cols with the variables
-dygraph(variables)
+dygraph(variables) %>%
+  dyAxis("y",label = "NDVI")
 ```
 
 If you want to export these statistics, we can do so to a CSV file.
