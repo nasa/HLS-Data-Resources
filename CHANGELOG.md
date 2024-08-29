@@ -1,7 +1,8 @@
+08-26-2024
 
-01-11-2023
-
-- Added The HLS R Tutorial
+- Update [HLS_Tutorial.Rmd](r/tutorials/HLS_Tutorial.Rmd)
+  - Add a new section for Quality Masking
+  - Improve readability and vectorize some code chunks
 
 01-19-2024
 
@@ -46,6 +47,10 @@
   - Made new visualizations
   - Changed the ROI to include the larger area with variation in quality info
 -
+
+01-11-2023
+
+- Added The HLS R Tutorial
 
 11-02-2021  
 
