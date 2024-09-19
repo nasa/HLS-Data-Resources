@@ -139,7 +139,7 @@ Example
 #### -end END  
 
 ```None  
-Start date for time period of interest: valid format is mm/dd/yyyy (e.g. 2020-10-20). (default: current date)  
+Start date for time period of interest: valid format is yyyy-mm-dd (e.g. 2020-10-20). (default: current date)  
 
 Example  
 > python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24  

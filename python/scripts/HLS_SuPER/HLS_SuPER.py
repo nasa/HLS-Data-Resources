@@ -72,8 +72,8 @@ def parse_arguments():
     parser.add_argument(
         "-end",
         required=False,
-        help="Start date for time period of interest: valid format is mm/dd/yyyy (e.g. 10/24/2020).",
-        default=dt.today().strftime("%m/%d/%Y"),
+        help="Start date for time period of interest: valid format is mm/dd/yyyy (e.g. 2022-10-24).",
+        default=dt.today().strftime("%Y-%m-%d"),
     )
 
     # prod: product(s) desired to be downloaded
@@ -147,6 +147,7 @@ def format_roi(roi):
     Returns the opened GeoJSON/shapefile as a geopandas dataframe for clipping.
     """
     if os.path.isfile(roi):  # and roi.endswith(("geojson", "shp")):
+        print(roi)
         try:
             # Open ROI if file
             roi = gpd.read_file(roi)
@@ -167,7 +168,8 @@ def format_roi(roi):
             )
     else:
         # If bbox coordinates are submitted
-        bbox = tuple(map(float, roi.split(",")))
+        bbox = tuple(map(float, roi.strip("'").strip('"').split(",")))
+        print(bbox)
 
         # Convert bbox to a geodataframe for clipping
         roi = gpd.GeoDataFrame(geometry=[box(*bbox)], crs="EPSG:4326")
@@ -185,7 +187,7 @@ def format_dates(start, end):
         end = dt.strptime(end, "%Y-%m-%d")
     except ValueError:
         sys.exit(
-            "A date format is not valid. The valid format is ISO 8601: YYYY-MM-DD (e.g. 2020/10/20)"
+            "A date format is not valid. The valid format is ISO 8601: YYYY-MM-DD (e.g. 2020-10-20)"
         )
     if start > end:
         sys.exit(
