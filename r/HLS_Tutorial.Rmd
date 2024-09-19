@@ -755,7 +755,7 @@ dygraph(variables) %>%
 If you want to export these statistics, we can do so to a CSV file.  
 
 ```{r}
-stats_name <- file.path(outDir, "NDVI_Statistics.csv")
+stats_name <- file.path(outDir, "HLS_NDVI_Statistics.csv")
 write.csv(stats,stats_name)
 ```
 
@@ -764,9 +764,10 @@ write.csv(stats,stats_name)
 Lastly, if you want to capture the final output files locally on your machine, 
 you can export them as GeoTIFFs.  
 
-```{r, warning = FALSE}
-for (i in 1:length(ndvi_masked)){
-  output_name <- file.path(outDir, paste0(names(ndvi_masked[[i]]), "_NDVI.tif"))
+```{r}
+for (i in 1:nlyr(ndvi_masked)){
+  file_name <- paste0("HLS.", gsub("[:]",".", names(ndvi_masked[[i]])), ".NDVI.tif")
+  output_name <- file.path(outDir, file_name)
   terra::writeRaster(ndvi_masked[[i]], output_name, overwrite = TRUE)
 }
 ```
@@ -774,7 +775,7 @@ for (i in 1:length(ndvi_masked)){
 The raster stack object can also be written to the disk.  
 
 ```{r, warning=FALSE}
-output_name <- file.path(outDir, "NDVI_stack.tif")
+output_name <- file.path(outDir, "HLS_NDVI_stack.tif")
 terra::writeRaster(ndvi_masked, filename=output_name, overwrite=TRUE)
 ```
 
