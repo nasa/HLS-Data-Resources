@@ -248,7 +248,7 @@ Collections will be searched. Here, we are interested in both HLS **L30** (Lands
 Collection IDs in CMR-STAC visit [Getting Started with NASA's CMR-STAC API](https://git.earthdata.nasa.gov/projects/LPDUR/repos/data-discovery---cmr-stac-api/browse).
 
 ```{r}
-HLS_col <- list("HLSS30.v2.0", "HLSL30.v2.0")
+HLS_col <- list("HLSS30_2.0", "HLSL30_2.0")
 ```
 
 ## 2b. Spatial Query Search Parameter
@@ -281,7 +281,7 @@ search parameters for precise data retrieval.
 
 ```{r}
 roi_extent <- terra::ext(roi)
-bbox <- paste(roi_extent[1], roi_extent[3], roi_extent[2], roi_extent[4], sep = ',')
+bbox <- c(roi_extent$xmin, roi_extent$ymin, roi_extent$xmax, roi_extent$ymax)
 ```
 
 ## 2c. Temporal Query Search Parameter
@@ -397,9 +397,9 @@ them as columns to the dataframe. Afterwards, run it.
 # # # depending on the collection (HLSL30 or HLSS30)
 extract_asset_urls <- function(feature) {
     collection_id <- feature$collection
-    if (collection_id == "HLSS30.v2.0") {
+    if (collection_id == "HLSS30_2.0") {
         bands = c('B8A','B04','Fmask')
-    } else if (collection_id == "HLSL30.v2.0") {
+    } else if (collection_id == "HLSL30_2.0") {
         bands = c('B05','B04','Fmask')}
     sapply(bands, function(band) feature$assets[[band]]$href)
 }
@@ -755,7 +755,7 @@ dygraph(variables) %>%
 If you want to export these statistics, we can do so to a CSV file.  
 
 ```{r}
-stats_name <- file.path(outDir, "NDVI_Statistics.csv")
+stats_name <- file.path(outDir, "HLS_NDVI_Statistics.csv")
 write.csv(stats,stats_name)
 ```
 
@@ -764,9 +764,10 @@ write.csv(stats,stats_name)
 Lastly, if you want to capture the final output files locally on your machine, 
 you can export them as GeoTIFFs.  
 
-```{r, warning = FALSE}
-for (i in 1:length(ndvi_masked)){
-  output_name <- file.path(outDir, paste0(names(ndvi_masked[[i]]), "_NDVI.tif"))
+```{r}
+for (i in 1:nlyr(ndvi_masked)){
+  file_name <- paste0("HLS.", gsub("[:]",".", names(ndvi_masked[[i]])), ".NDVI.tif")
+  output_name <- file.path(outDir, file_name)
   terra::writeRaster(ndvi_masked[[i]], output_name, overwrite = TRUE)
 }
 ```
@@ -774,7 +775,7 @@ for (i in 1:length(ndvi_masked)){
 The raster stack object can also be written to the disk.  
 
 ```{r, warning=FALSE}
-output_name <- file.path(outDir, "NDVI_stack.tif")
+output_name <- file.path(outDir, "HLS_NDVI_stack.tif")
 terra::writeRaster(ndvi_masked, filename=output_name, overwrite=TRUE)
 ```
 
@@ -789,8 +790,8 @@ download everything.
   Contact: [LPDAAC\@usgs.gov](mailto:LPDAAC@usgs.gov){.email}  
   Voice: +1-866-573-3222  
   Organization: Land Processes Distributed Active Archive Center (LP DAAC)  
-  Website: <https://lpdaac.usgs.gov/>\                   
-  Date last modified: 08-22-2024                
+  Website: <https://lpdaac.usgs.gov/>                   
+  Date last modified: 09-17-2024                
   
   Work performed under USGS contract G0121D0001 for LP DAAC^1^.
   ^1^ LP DAAC Work performed under NASA contract NNG14HH33I.
