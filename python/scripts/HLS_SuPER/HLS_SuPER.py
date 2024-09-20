@@ -16,6 +16,7 @@ Last Updated: 2024-09-18
 import argparse
 import sys
 import os
+import shutil
 import logging
 import time
 import json
@@ -72,7 +73,7 @@ def parse_arguments():
     parser.add_argument(
         "-end",
         required=False,
-        help="Start date for time period of interest: valid format is mm/dd/yyyy (e.g. 2022-10-24).",
+        help="Start date for time period of interest: valid format is yyyy-mm-dd (e.g. 2022-10-24).",
         default=dt.today().strftime("%Y-%m-%d"),
     )
 
@@ -128,6 +129,16 @@ def parse_arguments():
         default="COG",
     )
 
+    # chunksize: chunk size for processing with dask
+    parser.add_argument(
+        "-cs",
+        type=str,
+        help="Chunksize for processing scenes with dask in format 'band,x,y'. This is used to provide chunk_size argument to rioxarray.open_rasterio to improve processing speed.\
+                For example: '1,512,512' (native hls chunk size) provides better performance for ROIs that fall within a single scene, while '1,3600,3600' (full HLS scene) provides better performance for \
+                    larger ROIs that span multiple scenes. The default is '1,512,512', but this can lead to a very large task list for large ROIs.",
+        default="1,512,512",
+    )
+
     # logfile: Optional logfile path
     parser.add_argument(
         "-logfile",
@@ -168,7 +179,7 @@ def format_roi(roi):
             )
     else:
         # If bbox coordinates are submitted
-        bbox = tuple(map(float, roi.strip("'").strip('"').split(",")))
+        bbox = tuple(map(float, roi.strip("'\"").split(",")))
         print(bbox)
 
         # Convert bbox to a geodataframe for clipping
@@ -331,9 +342,24 @@ def create_band_dict(prod, bands):
     return band_dict
 
 
-def confirm_processing(prompt="Do you want to proceed with processing? (y/n)"):
+def format_chunksize(chunksize):
     """
-    Prompts the user to confirm processing of search results.
+    Converts comma-separated chunksize string to dictionary.
+    """
+    keys = ["band", "x", "y"]
+    values = list(map(int, chunksize.strip("'\"").split(",")))
+
+    if len(values) != len(keys):
+        raise ValueError(
+            "Chunksize must provide band, x and y (3) values separated by commas."
+        )
+
+    return dict(zip(keys, values))
+
+
+def confirm_action(prompt):
+    """
+    Prompts the user to confirm an action.
     """
     while True:
         response = input(prompt).lower()
@@ -385,7 +411,7 @@ def main():
     # Handle Login Credentials with earthaccess
     earthaccess.login(persist=True)
 
-    # Start Timer
+    # Start Log
     logging.info("HLS SuPER script started")
 
     # Format ROI
@@ -421,6 +447,10 @@ def main():
     scale = str_to_bool(args.scale)
     logging.info(f"Apply Scale Factor: {scale}")
 
+    # Chunk Size
+    chunk_size = format_chunksize(args.cs)
+    logging.info(f"Chunk Size: {chunk_size}")
+
     # Output File Type
     if args.of not in ["COG", "NC4"]:
         sys.exit(
@@ -431,11 +461,26 @@ def main():
 
     # Search for Data and Save Results
     results_urls_file = os.path.join(output_dir, "hls_super_results_urls.json")
+    use_existing_file = False
 
     if os.path.isfile(results_urls_file):
-        logging.info(
-            f"Results url list already exists in {output_dir}. Will use existing hls_super_results_urls.json"
-        )
+        logging.info(f"Results url list already exists in {output_dir}.")
+        # Confirm if user wants to use existing file.
+        if confirm_action(
+            f"Do you want to use the existing results file ({results_urls_file})? (y/n)"
+        ):
+            use_existing_file = True
+
+        else:
+            if not confirm_action(
+                "Do you want to overwrite the existing results file? (y/n)"
+            ):
+                sys.exit(
+                    f"Processing aborted. Please move, rename, or remove existing file: {results_urls_file}."
+                )
+
+    if use_existing_file:
+        logging.info("Using existing results file.")
         with open(results_urls_file, "r") as file:
             results_urls = json.load(file)
 
@@ -458,7 +503,7 @@ def main():
         logging.info(f"{total_assets} assets will be processed.")
 
     # Confirm Processing
-    if not confirm_processing():
+    if not confirm_action("Do you want to proceed with processing? (y/n)"):
         sys.exit("Processing aborted.")
 
     # Initialize Dask Cluster
@@ -471,7 +516,26 @@ def main():
         f"Dask environment setup successfully. View dashboard: {client.dashboard_link}."
     )
 
-    # Process Search Results
+    # Scatter Results Results url
+    client.scatter(results_urls)
+
+    # If NC4, create a temporary directory to store COGs
+    if args.of == "NC4":
+        cog_dir = os.path.join(output_dir, "temp")
+        if not os.path.exists(cog_dir):
+            os.makedirs(cog_dir, exist_ok=True)
+        else:
+            if not confirm_action(
+                "Temporary directory to store COGs already exists. Use these files to create NC4 outputs? (y/n)"
+            ):
+                sys.exit(
+                    f"Processing aborted. Please remove existing directory: {cog_dir}."
+                )
+
+    else:
+        cog_dir = output_dir
+
+    # Process Granules
     start_time = time.time()
     logging.info("Processing...")
     tasks = [
@@ -480,10 +544,10 @@ def main():
             roi=roi,
             quality_filter=qf,
             scale=scale,
-            output_dir=output_dir,
+            output_dir=cog_dir,
             band_dict=band_dict,
             bit_nums=[0, 1, 2, 3, 4, 5],
-            chunk_size=dict(band=1, x=512, y=512),
+            chunk_size=chunk_size,
         )
         for granule_url in results_urls
     ]
@@ -492,24 +556,17 @@ def main():
     # Create Timeseries Dataset if NC4
     if args.of == "NC4":
         logging.info("Creating timeseries dataset...")
-        create_timeseries_dataset(
-            output_dir, output_type=args.of, output_dir=output_dir
-        )
-        # Close Dask Client
-        client.close()
-        # Remove Temporary COG Files
+        create_timeseries_dataset(cog_dir, output_type=args.of, output_dir=output_dir)
+
+    # Close Dask Client
+    client.close()
+
+    # Remove Temporary COGs if NC4
+    if args.of == "NC4":
         logging.info("Timeseries Dataset Created. Removing Temporary Files...")
-        tif_list = [
-            os.path.join(output_dir, file)
-            for file in os.listdir(output_dir)
-            if file.endswith(".tif")
-        ]
-        [os.remove(tif) for tif in tif_list]
+        shutil.rmtree(cog_dir)
 
-    else:
-        # Close Dask Client
-        client.close()
-
+    # End Timer
     total_time = time.time() - start_time
     logging.info(
         f"Processing complete. Total time: {round(total_time,2)}s, "

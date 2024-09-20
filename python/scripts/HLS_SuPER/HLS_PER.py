@@ -237,11 +237,12 @@ def create_timeseries_dataset(hls_file_dir, output_type, output_dir=None):
     for file in all_files:
         tile = file.split(".")[2]
         band = file.split(".")[6]
+        full_path = os.path.join(hls_file_dir, file)
         if tile not in file_dict:
             file_dict[tile] = {}
         if band not in file_dict[tile]:
             file_dict[tile][band] = []
-        file_dict[tile][band].append(file)
+        file_dict[tile][band].append(full_path)
 
     # logging.info(f"{file_dict}")
 
