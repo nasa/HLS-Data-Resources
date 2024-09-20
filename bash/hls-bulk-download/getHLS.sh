@@ -140,16 +140,6 @@ do
              continue;;
 	esac
 
-	# Query twice for now: one for L30, one for S30 because of the inconsistency of data type.
-	# Once the data type problem is resolved, one of the queries will no longer be needed.
-	query_final="${query}&attribute[]=float,CLOUD_COVERAGE,,$CLOUD" 	# max 
-	if [ $WGET = true ]
-	then
-		wget -q "${query_final}&attribute[]=string,MGRS_TILE_ID,$tile" -O - >>$meta
-	else
-		curl -s "${query_final}&attribute[]=string,MGRS_TILE_ID,$tile" >>$meta
-	fi
-
 	query_final="${query}&attribute[]=int,CLOUD_COVERAGE,,$CLOUD" 		# max 
 	if [ $WGET = true ]
 	then

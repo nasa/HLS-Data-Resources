@@ -1,3 +1,9 @@
+09-17-2024
+
+- Update [HLS_Tutorial.Rmd](r/tutorials/HLS_Tutorial.Rmd)
+  - Changed collection identifiers to reflect latest changes to the CMR-STAC API. See [this announcement](https://lpdaac.usgs.gov/news/important-update-to-cmr-stac-new-identifier-and-search-parameter-format/) for more information.  
+  - Changed the input bbox formatting. 
+
 08-26-2024
 
 - Update [HLS_Tutorial.Rmd](r/tutorials/HLS_Tutorial.Rmd)
