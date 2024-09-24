@@ -22,7 +22,7 @@ import time
 import json
 
 import earthaccess
-from shapely.geometry import box
+from shapely.geometry import polygon, box
 import geopandas as gpd
 from datetime import datetime as dt
 import dask.distributed
@@ -134,8 +134,8 @@ def parse_arguments():
         "-cs",
         type=str,
         help="Chunksize for processing scenes with dask in format 'band,x,y'. This is used to provide chunk_size argument to rioxarray.open_rasterio to improve processing speed.\
-                For example: '1,512,512' (native hls chunk size) provides better performance for ROIs that fall within a single scene, while '1,3600,3600' (full HLS scene) provides better performance for \
-                    larger ROIs that span multiple scenes. The default is '1,512,512', but this can lead to a very large task list for large ROIs.",
+            For example: '1,512,512' (native hls chunk size) provides better performance for ROIs that fall within a single scene, while '1,3600,3600' (full HLS scene) provides better performance for \
+            larger ROIs that span multiple scenes. The default is '1,512,512', but this can lead to a very large task list for large ROIs.",
         default="1,512,512",
     )
 
@@ -153,26 +153,36 @@ def format_roi(roi):
     """
     Determines if submitted ROI is a file or bbox coordinates.
 
-    If a file,
-    opens a GeoJSON or shapefile and creates a bbox. If the file has multiple polygons it will use the total bounds.
-    Returns the opened GeoJSON/shapefile as a geopandas dataframe for clipping.
+    If a file, opens a GeoJSON or shapefile and creates a list of polygon vertices in the correct order. If the file has multiple polygons it will use a unary union convex hull of the external bounds.
+
+    If bbox coordinates, creates a geodataframe with a single Polygon geometry.
+
+    Returns a geopandas dataframe for clipping and a list of vertices for searching.
     """
     if os.path.isfile(roi):  # and roi.endswith(("geojson", "shp")):
         print(roi)
         try:
             # Open ROI if file
             roi = gpd.read_file(roi)
-
+            if len(roi) > 1:
+                # Merge all Polygon geometries and create external boundary
+                logging.info(
+                    "Multiple polygons detected. Creating single geometry of external coordinates."
+                )
+                single_geometry = roi.unary_union.convex_hull
+                roi = gpd.GeoDataFrame(geometry=[single_geometry], crs=roi.crs)
+                logging.info(roi)
             # Check if ROI is in Geographic CRS, if not, convert to it
             if roi.crs.is_geographic:
-                bbox = tuple(list(roi.total_bounds))
+                # List Vertices in correct order for search
+                vertices_list = list(roi.geometry[0].exterior.coords)
 
             else:
                 roi_geographic = roi.to_crs("EPSG:4326")
-                print(
+                logging.info(
                     "Note: ROI submitted is being converted to Geographic CRS (EPSG:4326)"
                 )
-                bbox = tuple(list(roi_geographic.total_bounds))
+                vertices_list = list(roi_geographic.geometry[0].exterior.coords)
         except (FileNotFoundError, ValueError):
             sys.exit(
                 f"The GeoJSON/shapefile is either not valid or could not be found.\nPlease double check the name and provide the absolute path to the file or make sure that it is located in {os.getcwd()}"
@@ -185,7 +195,9 @@ def format_roi(roi):
         # Convert bbox to a geodataframe for clipping
         roi = gpd.GeoDataFrame(geometry=[box(*bbox)], crs="EPSG:4326")
 
-    return (roi, bbox)
+        vertices_list = list(roi.geometry[0].exterior.coords)
+
+    return (roi, vertices_list)
 
 
 def format_dates(start, end):
@@ -415,7 +427,7 @@ def main():
     logging.info("HLS SuPER script started")
 
     # Format ROI
-    roi, bbox = format_roi(args.roi)
+    roi, vl = format_roi(args.roi)
     logging.info("Region of Interest formatted successfully")
 
     # Set Output Directory
@@ -487,7 +499,7 @@ def main():
     else:
         logging.info("Searching for data...")
         results_urls = hls_search(
-            bbox=bbox, band_dict=band_dict, dates=dates, cloud_cover=cc
+            roi=vl, band_dict=band_dict, dates=dates, cloud_cover=cc
         )
         logging.info(f"Writing search results to {results_urls_file}")
         with open(results_urls_file, "w") as file:

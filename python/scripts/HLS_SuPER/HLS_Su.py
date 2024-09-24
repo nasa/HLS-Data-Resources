@@ -16,14 +16,14 @@ import earthaccess
 
 
 # Main function to search and filter HLS data
-def hls_search(bbox: tuple, band_dict: dict, dates=None, cloud_cover=None, log=False):
+def hls_search(roi: list, band_dict: dict, dates=None, cloud_cover=None, log=False):
     """
-    This function uses earthaccess to search for HLS data using a bbox and temporal parameter, filter by cloud cover and delivers a list of results urls for the selected bands.
+    This function uses earthaccess to search for HLS data using an roi and temporal parameter, filter by cloud cover and delivers a list of results urls for the selected bands.
     """
     # Search for data
     results = earthaccess.search_data(
         short_name=list(band_dict.keys()),  # Band dict contains shortnames as keys
-        bounding_box=bbox,
+        polygon=roi,
         temporal=dates,
     )
 
