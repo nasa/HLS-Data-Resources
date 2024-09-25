@@ -1,108 +1,89 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-HLS Subsetting Data Prep Script          
-The following Python code will search for HLS data by product, layer(s), 
-time period, region of interest, and cloud cover. Data will be subset by only 
-returning the desired product-layer & spatiotemporal subset defined by the user
+This module contains functions related to searching and preprocessing HLS data.
+
 -------------------------------------------------------------------------------                        
-Authors: Mahsa Jami and Cole Krehbiel                                                   
-Last Updated: 03-12-2021                                               
+Authors: Mahsa Jami, Cole Krehbiel, and Erik Bolch
+Contact: lpdaac@usgs.gov                                                   
+Last Updated: 2024-09-18                                    
 ===============================================================================
 """
 
-# Define the script as a function and use the inputs provided by HLS_SuPER.py:
-def hls_subset(bbox_string, outDir, dates, prods, band_dict, cc):
-    
-    # Load necessary packages into Python
-    import os
-    import requests as r
-    import sys
+# Import necessary packages
+import numpy as np
+import earthaccess
 
-    # ------------------------------SET-UP WORKSPACE------------------------- #
-    # Change the working directory
-    os.chdir(outDir)
-    
-    # CMR-STAC API Endpoint for LP DAAC search 
-    lp_stac = 'https://cmr.earthdata.nasa.gov/stac/LPCLOUD/search?'   
-    
-    # ------------------------------PERFORM SEARCH QUERY--------------------- #
-    bandLinks = [] # Create an empty list to save the output URLs
-    num_tiles = 0
 
-    for b in band_dict:        
-        page = 1
-        # Attempt to access STAC up to 3 times
-        for retry in range(0,3):
-            
-            # Set up a search query dictionary with all the desired query parameters
-            params = {"bbox": bbox_string, "limit": 100, "datetime": dates, "collections": [prods[b]], "page": page}
-            #search_query = f"{lp_stac}&collections={prods[b]}&bbox={bbox_string}&datetime={dates}&limit={limit}&page={page}"
-            # Post params dict to the CMR-STAC search endpoint
-            if r.post(lp_stac, json=params).status_code == 200:        # Check status code for successful query or not
-                search_response = r.post(lp_stac, json=params).json()  # Send GET request to retrieve items
-                if len(search_response['features']) == 0:     # Raise warning to users that no intersecting files were found
-                    print(f'There were no matching outputs found for {b} (Attempt: {retry + 1} of 3)')
-                    continue
-                else:
-                    print(f'There are matching outputs found for {b}')
-                    while search_response['numberReturned'] != 0:
-                        # Iterate through each item and find the desired assets (layers)
-                        for h in search_response['features']:
-                            
-                            # Filter by cloud cover
-                            if h['properties']['eo:cloud_cover'] <= cc:
-                                try:
-                                    # Always include browse, metadata, and fmask (QA)
-                                    bandLinks.append(h['assets']['browse']['href']) 
-                                    bandLinks.append(h['assets']['metadata']['href'])
-                                    bandLinks.append(h['assets']['Fmask']['href'])
-                                    num_tiles += 1
-                                except:
-                                    print(f"Browse, metadata, and/or Fmask assets were unavailable for {h}")
-                                
-                                # Now find the desired bands/layers
-                                for l in band_dict[b]:
-                                    
-                                    # Don't duplicate FMASK
-                                    if l == 'FMASK': continue
-                                
-                                    # Skip a single band (asset) if it does not exist for that item
-                                    try: 
-                                        # Add output links to the list
-                                        bandLinks.append(h['assets'][band_dict[b][l]]['href']) 
-                                    except:
-                                        print(f'{b} band is not available for {h["id"]}') 
-                        
-                        # Move to the next page until all granules are found
-                        page += 1
-                        params['page'] = page
-                        search_response = r.post(lp_stac, json=params).json()  # Send GET request to retrieve items
-                    break
-            # Attempt to find the source of an unsuccessful query 
-            else:                                                      
-                if r.post(lp_stac).status_code != 200: 
-                    print(f"ERROR: The CMR-STAC Service is either down or you may not be connected to the internet. (Attempt {retry+1} of 3)")
-                elif r.post(lp_stac, json={"bbox": bbox_string, "limit": 100, "collections": [prods[b]]}).status_code != 200:
-                    print(f"ERROR: The ROI was rejected by the server. (Attempt {retry+1} of 3)")
-                else:
-                    print(f"ERROR: The start and/or end dates were rejected by the server. (Attempt {retry+1} of 3)") 
+# Main function to search and filter HLS data
+def hls_search(roi: list, band_dict: dict, dates=None, cloud_cover=None, log=False):
+    """
+    This function uses earthaccess to search for HLS data using an roi and temporal parameter, filter by cloud cover and delivers a list of results urls for the selected bands.
+    """
+    # Search for data
+    results = earthaccess.search_data(
+        short_name=list(band_dict.keys()),  # Band dict contains shortnames as keys
+        polygon=roi,
+        temporal=dates,
+    )
 
-    print(f"\n{num_tiles} granules intersect with your query including {len(bandLinks)} downloadable files.")
-    
-    # Exit script if no intersecting files found
-    if num_tiles == 0:
-        sys.exit()
-        
-    print("Links to those files are saved in the file below:")    
-    # Save the links in a text file 
-    out_file = f"{outDir}HLS_SuPER_links.txt"
-    with open(out_file, "w") as output:
-        for link in bandLinks:
-            output.write(f'{link}\n')
-    print(out_file)
-        
-    # Ask user if they would like to continue with processing or exit
-    dl = input("Would you like to continue downloading these files? (y/n):")
-    
-    return dl  # Return response to HLS_SuPER.py
+    # Filter by cloud cover
+    if cloud_cover:
+        results = hls_cc_filter(results, cloud_cover)
+
+    # Get results urls
+    results_urls = [granule.data_links() for granule in results]
+
+    # Flatten url list
+    # results_urls = [item for sublist in results_urls for item in sublist]
+
+    # Filter url list based on selected bands
+    selected_results_urls = [
+        get_selected_bands_urls(granule_urls, band_dict)
+        for granule_urls in results_urls
+    ]
+    return selected_results_urls
+
+
+# Filter earthaccess results based on cloud cover threshold
+def hls_cc_filter(results, cc_threshold):
+    """
+    This function filters a list of earthaccess results based on a cloud cover threshold.
+    """
+    cc = []
+    for result in results:
+        # Retrieve Cloud Cover from json, convert to float and place in numpy array
+        cc.append(
+            float(
+                next(
+                    (
+                        aa
+                        for aa in result["umm"]["AdditionalAttributes"]
+                        if aa.get("Name") == "CLOUD_COVERAGE"
+                    ),
+                    None,
+                )["Values"][0]
+            )
+        )
+    cc = np.array(cc)
+    # Find indices based on cloud cover threshold
+    cc_indices = np.where(cc <= cc_threshold)
+    # Filter results based on indices
+    return [results[i] for i in cc_indices[0]]
+
+
+# Filter results urls based on selected bands
+def get_selected_bands_urls(url_list, band_dict):
+    """
+    This function filters a list of results urls based on HLS collection and selected bands.
+    """
+    selected_bands_urls = []
+    # Loop through urls
+    for url in url_list:
+        # Filter bands based on band dictionary
+        for collection, nested_dict in band_dict.items():
+            if collection in url:
+                for band in nested_dict.values():
+                    if band in url:
+                        selected_bands_urls.append(url)
+    return selected_bands_urls

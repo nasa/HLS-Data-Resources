@@ -1,378 +1,306 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-HLS Export Reformatted Data Prep Script
-The following Python code will read in a text file of links to HLS data,
-access subsets of those data using the defined ROI, [optionally] perform basic
-quality filtering, apply the scale factor, and export in the user-defined
-output file format.
+HLS Processing and Exporting Reformatted Data (HLS_PER)
+
+This module contains functions to conduct subsetting and quality filtering of 
+search results.
 -------------------------------------------------------------------------------
-Authors: Cole Krehbiel and Mahsa Jami
-Last Updated: 07-28-2023
+Authors: Cole Krehbiel, Mahsa Jami, and Erik Bolch
+Last Updated: 2024-09-18
 ===============================================================================
 """
 
-# Define the script as a function and use the inputs provided by HLS_SuPER.py:
-def hls_process(outDir, ROI, qf, scale, of, fileList):
-    ######################### IMPORT PACKAGES #################################
-    import os
-    import rasterio as rio
-    from osgeo import gdal
-    import pyproj
-    from shapely.ops import transform
-    from shapely.geometry import box
-    from rasterio.mask import mask
-    from rasterio.shutil import copy
-    import numpy as np
-    from rasterio.enums import Resampling
-    import requests as r
-    import geopandas as gp
-    from netrc import netrc
-    from subprocess import Popen
-    from subprocess import DEVNULL, STDOUT
-    from getpass import getpass
-    from pyproj import CRS
-    from datetime import datetime
-    import warnings
-    from sys import platform
-    # import rioxarray as rxr
-    import earthaccess
+import os
+import sys
+import logging
 
-    ######################### HANDLE INPUTS ###################################
-    os.chdir(outDir)
-    out_file = fileList  # text file of HLS links from HLS_Su.py
-    failed = []          # Store any files that fail to be downloaded
-    
-    # Read in links file
-    with open(out_file) as f: files = f.read().splitlines()
-    f.close()
+import numpy as np
+from datetime import datetime as dt
+import xarray as xr
+import rioxarray as rxr
+import dask.distributed
 
-    # Convert file list to dictionary
+
+def create_output_name(url, band_dict):
+    """
+    Uses HLS default naming scheme to generate an output name with common band names.
+    This allows for easier stacking of bands from both collections.
+    """
+    # Get Necessary Strings
+    prod = url.split("/")[4].split(".")[0]
+    asset = url.split("/")[-1].split(".")[-2]
+    # Hard-coded one off for Fmask name incase it is not in the band_dict but is needed for masking
+    if asset == "Fmask":
+        output_name = f"{'.'.join(url.split('/')[-1].split('.')[:-2])}.FMASK.subset.tif"
+    else:
+        for key, value in band_dict[prod].items():
+            if value == asset:
+                output_name = (
+                    f"{'.'.join(url.split('/')[-1].split('.')[:-2])}.{key}.subset.tif"
+                )
+    return output_name
+
+
+def open_hls(url, roi=None, scale=True, chunk_size=dict(band=1, x=512, y=512)):
+    """
+    Generic Function to open an HLS COG and clip to ROI. For consistent scaling, this must be done manually.
+    Some HLS Landsat scenes have the metadata in the wrong location.
+    """
+    # Open using rioxarray
+    da = rxr.open_rasterio(url, chunks=chunk_size, mask_and_scale=False).squeeze(
+        "band", drop=True
+    )
+
+    # Reproject ROI and Clip if ROI is provided
+    if roi is not None:
+        roi = roi.to_crs(da.spatial_ref.crs_wkt)
+        da = da.rio.clip(roi.geometry.values, roi.crs, all_touched=True)
+
+    # Apply Scale Factor if desired for non-quality layer
+    if scale and "Fmask" not in url:
+        # Mask Fill Values
+        da = xr.where(da == -9999, np.nan, da)
+        # Scale Data
+        da = da * 0.0001
+        # Remove Scale Factor After Scaling - Prevents Double Scaling
+        da.attrs["scale_factor"] = 1.0
+
+    # Add Scale Factor to Attributes Manually - This will overwrite/add if the data is missing.
+    if not scale and "Fmask" not in url:
+        da.attrs["scale_factor"] = 0.0001
+
+    return da
+
+
+def create_quality_mask(quality_data, bit_nums: list = [0, 1, 2, 3, 4, 5]):
+    """
+    Uses the Fmask layer and bit numbers to create a binary mask of good pixels.
+    By default, bits 0-5 are used.
+    """
+    mask_array = np.zeros((quality_data.shape[0], quality_data.shape[1]))
+    # Remove/Mask Fill Values and Convert to Integer
+    quality_data = np.nan_to_num(quality_data, 0).astype(np.int8)
+    for bit in bit_nums:
+        # Create a Single Binary Mask Layer
+        mask_temp = np.array(quality_data) & 1 << bit > 0
+        mask_array = np.logical_or(mask_array, mask_temp)
+    return mask_array
+
+
+def process_granule(
+    granule_urls,
+    roi,
+    quality_filter,
+    scale,
+    output_dir,
+    band_dict,
+    bit_nums=[0, 1, 2, 3, 4, 5],
+    chunk_size=dict(band=1, x=512, y=512),
+):
+    """
+    Processes a list of HLS asset urls for a single granule.
+    """
+
+    # Setup Logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s:%(asctime)s ||| %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    # Check if all Outputs Exist for a Granule
+    if not all(
+        os.path.isfile(f"{output_dir}/{create_output_name(url, band_dict)}")
+        for url in granule_urls
+    ):
+
+        # First Handle Quality Layer
+        if quality_filter:
+            # Generate Quality Layer URL
+            split_asset = granule_urls[0].split("/")[-1].split(".")
+            split_asset[-2] = "Fmask"
+            quality_url = (
+                f"{'/'.join(granule_urls[0].split('/')[:-1])}/{'.'.join(split_asset)}"
+            )
+
+            # Check if File exists in Output Directory
+            output_name = create_output_name(quality_url, band_dict)
+            output_file = f"{output_dir}/{output_name}"
+
+            # Open Quality Layer
+            qa_da = open_hls(quality_url, roi, scale, chunk_size)
+
+            # Check if quality asset is already processed
+            if not os.path.isfile(output_file):
+                # Write Output
+                qa_da.rio.to_raster(raster_path=output_file, driver="COG")
+            else:
+                logging.info(
+                    f"Existing file {output_name} found in {output_dir}. Skipping."
+                )
+
+            # Remove Quality Layer from Granule Asset List if Present
+            granule_urls = [asset for asset in granule_urls if asset != quality_url]
+
+            # Create Quality Mask
+            qa_mask = create_quality_mask(qa_da, bit_nums=bit_nums)
+
+        # Process Remaining Assets
+
+        for url in granule_urls:
+            # Check if File exists in Output Directory
+            output_name = create_output_name(url, band_dict)
+            output_file = f"{output_dir}/{output_name}"
+
+            # Check if scene is already processed
+            if not os.path.isfile(output_file):
+                # Open Asset
+                da = open_hls(url, roi, scale, chunk_size)
+
+                # Apply Quality Mask if Desired
+                if quality_filter:
+                    da = da.where(~qa_mask)
+
+                # Write Output
+                da.rio.to_raster(raster_path=output_file, driver="COG")
+            else:
+                logging.info(
+                    f"Existing file {output_name} found in {output_dir}. Skipping."
+                )
+    else:
+        logging.info(
+            f"All assets related to {granule_urls[0].split('/')[-1]} are already processed, skipping."
+        )
+
+
+def build_hls_xarray_timeseries(
+    hls_cog_list, mask_and_scale=True, chunk_size=dict(band=1, x=512, y=512)
+):
+    """
+    Builds a single band timeseries using xarray for a list of HLS COGs. Dependent on file naming convention.
+    Works on SuPERScript named files. Files need common naming bands corresponding HLSS and HLSL bands,
+    e.g. HLSL30 Band 5 (NIR1) and HLSS30 Band 8A (NIR1)
+    """
+    # Define Band(s)
+    bands = [filename.split(".")[6] for filename in hls_cog_list]
+
+    # Make sure all files in list are the same band
+    if not all(band == bands[0] for band in bands):
+        raise ValueError("All listed files must be of the same band.")
+
+    band_name = bands[0]
+
+    # Create Time Variable
+    try:
+        time_list = [
+            dt.strptime(filename.split(".")[3], "%Y%jT%H%M%S")
+            for filename in hls_cog_list
+        ]
+    except ValueError:
+        print("A COG does not have a valid date string in the filename.")
+
+    time = xr.Variable("time", time_list)
+
+    timeseries_da = xr.concat(
+        [
+            rxr.open_rasterio(
+                filename, mask_and_scale=mask_and_scale, chunks=chunk_size
+            ).squeeze("band", drop=True)
+            for filename in hls_cog_list
+        ],
+        dim=time,
+    )
+    timeseries_da.name = band_name
+
+    return timeseries_da
+
+
+def create_timeseries_dataset(hls_file_dir, output_type, output_dir=None):
+    """
+    Creates an xarray dataset timeseries from a directory of HLS COGs.
+    Writes to a netcdf output. Currently only works for HLS SuPER outputs.
+    """
+
+    # Setup Logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s:%(asctime)s ||| %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    # List Files in Directory
+    all_files = [file for file in os.listdir(hls_file_dir) if file.endswith(".tif")]
+
+    # Create Dictionary of Files by Band
     file_dict = {}
-    ancillary_files = []
-    for f in files:
-        # Create a list of ancillary files to be downloaded
-        if f.endswith('.jpg') or f.endswith('.xml'):
-            ancillary_files.append(f)
-        else:
-            # Use tilename + observation time to group into dictionary keys
-            tile_time = f"{f.split('.')[-6]}.{f.split('.')[-5]}"
-            if tile_time not in file_dict.keys():
-                file_dict[tile_time] = [f]
-            else:
-                file_dict[tile_time].append(f)
+    for file in all_files:
+        tile = file.split(".")[2]
+        band = file.split(".")[6]
+        full_path = os.path.join(hls_file_dir, file)
+        if tile not in file_dict:
+            file_dict[tile] = {}
+        if band not in file_dict[tile]:
+            file_dict[tile][band] = []
+        file_dict[tile][band].append(full_path)
 
-    # Convert bbox, shapefile, or geojson (from input args) to shapely polygon
-    if ROI.endswith('.shp') or ROI.endswith('json'):
-        if len(gp.read_file(ROI)['geometry']) > 1:
-            print('Multi-feature polygon detected. This script will only process the first feature.')
-        bbox = gp.read_file(ROI)
+    # logging.info(f"{file_dict}")
 
-        # Check if ROI is in Geographic CRS, if not, convert to it
-        if bbox.crs.is_geographic:
-            bbox.crs = 'EPSG:4326'
-        else:
-            bbox.to_crs("EPSG:4326", inplace=True)
-        roi_shape = bbox['geometry'][0]
+    # Check that all bands within each tile have the same number of observations
+    for tile, bands in file_dict.items():
+        q_obs = {band: len(files) for band, files in bands.items()}
+        if not all(q == list(q_obs.values())[0] for q in q_obs.values()):
+            logging.info(
+                f"Not all bands in {tile} have the same number of observations."
+            )
+            logging.info(f"{q_obs}")
 
-    else:
-        bbox = [float(rr.strip(']').strip('[').strip("'").strip('"').strip(' ')) for rr in ROI.split(',')]
-        roi_shape = box(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
-        # print(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    # Loop through each tile and build timeseries output
 
-    ######################## AUTHENTICATION ###################################
-    # GDAL configurations used to successfully access LP DAAC Cloud Assets via vsicurl 
-    gdal.SetConfigOption('GDAL_HTTP_COOKIEFILE','~/cookies.txt')
-    gdal.SetConfigOption('GDAL_HTTP_COOKIEJAR', '~/cookies.txt')
-    gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN','EMPTY_DIR')
-    gdal.SetConfigOption('CPL_VSIL_CURL_ALLOWED_EXTENSIONS','TIF')
-    gdal.SetConfigOption('GDAL_HTTP_UNSAFESSL', 'YES')# .netrc file config with earthaccess
-    earthaccess.login(persist=True)
-    
+    for tile, bands in file_dict.items():
+        dataset = xr.Dataset()
 
-    ######################## PROCESS FILES ####################################
-    # Define source CRS of the ROI
-    geo_CRS = pyproj.Proj('+proj=longlat +datum=WGS84 +no_defs', preserve_units=True)
-    all_cogs = []
-    
-    # Load into memory using ROI and vsicurl (via rasterio)
-    for f in file_dict:
-        # Try to access each item/asset 3 times
-        for retry in range(0,3):
-            z = 0
-            try:
-                # Read Quality band
-                qa = rio.open([file for file in file_dict[f] if 'Fmask' in file][0])
+        timeseries_dict = {
+            band: dask.delayed(build_hls_xarray_timeseries)(files)
+            for band, files in bands.items()
+        }
+        timeseries_dict = dask.compute(timeseries_dict)[0]
+        dataset = xr.Dataset(timeseries_dict)
 
-                # Convert bbox/geojson from EPSG:4326 to local UTM for scene
-                utm = pyproj.Proj(qa.crs)                             # Destination CRS read from QA band
-                project = pyproj.Transformer.from_proj(geo_CRS, utm)  # Set up src -> dest transformation 
-                roi_UTM = transform(project.transform, roi_shape)     # Apply reprojection to ROI
+        # Set up CF-Compliant Coordinate Attributes
+        dataset.attrs["Conventions"] = "CF-1.6"
+        dataset.attrs["title"] = "HLS SuPER Timeseries Dataset"
+        dataset.attrs["institution"] = "LP DAAC"
 
-                # Subset the fmask quality data (returned by default)
-                qa_subset, qa_transform = rio.mask.mask(qa, [roi_UTM], crop=True)
+        dataset.x.attrs["axis"] = "X"
+        dataset.x.attrs["standard_name"] = "projection_x_coordinate"
+        dataset.x.attrs["long_name"] = "x-coordinate in projected coordinate system"
+        dataset.x.attrs["units"] = "m"
 
-                originalName = qa.name.rsplit('/', 1)[-1] # If only exporting FMASK, use for original name
-                
-                if qf is True:
-                    bit_nums = [1,2,3,4,5]  
-                    mask_array = np.zeros((qa_subset[0].shape[0], qa_subset[0].shape[1]))
-                    for b in bit_nums:  
-                        # Apply QA mask and set masked data to fill value
-                        mask_temp = np.array(qa_subset) & 1 << b > 0
-                        
-                        mask_array = np.logical_or(mask_array , mask_temp)
+        dataset.y.attrs["axis"] = "Y"
+        dataset.y.attrs["standard_name"] = "projection_y_coordinate"
+        dataset.y.attrs["long_name"] = "y-coordinate in projected coordinate system"
+        dataset.y.attrs["units"] = "m"
 
+        dataset.time.attrs["axis"] = "Z"
+        dataset.time.attrs["standard_name"] = "time"
+        dataset.time.attrs["long_name"] = "time"
 
-                # Loop through and process all other layers (excluding QA)
-                for b in [file for file in file_dict[f] if 'Fmask' not in file]:
-                    z += 1
+        # Get first and last date
+        first_date = (
+            dataset.time.data[0].astype("M8[ms]").astype(dt).strftime("%Y-%m-%d")
+        )
+        final_date = (
+            dataset.time.data[-1].astype("M8[ms]").astype(dt).strftime("%Y-%m-%d")
+        )
 
-                    # Read file and load in subset
-                    band = rio.open(b)
-                    
-                    subset, btransform = rio.mask.mask(band, [roi_UTM], crop=True)
-
-                    # Filter by quality if desired
-                    if qf is True:
-                        '''Default Quality filtering here includes: mask cloud, cloud shadow, adjacent to cloud/shadow, 
-                        water, snow/ice, and low, moderate and high aerosol levels'''
-                        datasets_masked = np.ma.MaskedArray(subset, mask = mask_array) # Apply QA mask to the ST data
-                        datasets_masked = np.ma.filled(datasets_masked, band.meta['nodata'])
-                        subset.data = datasets_masked
-        
-
-                    # Apply scale factor if desired
-                    if scale is True:
-                        subset = subset[0] * band.scales[0] + band.offsets[0] # Apply Scale Factor
-                        scale_factor = (1.0,)
-                        add_offset = (0.0,)
-
-                        try:
-                            # Reset the fill value
-                            subset[subset == band.meta['nodata'] * band.scales[0]+ band.offsets[0]] = band.meta['nodata']
-                        except TypeError:
-                            print(f"Fill Value is not provided for band {band.name.rsplit('.', 2)[-2]}")
-                    else:
-                        subset = subset[0]
-                        scale_factor = band.scales
-                        add_offset = band.offsets
-
-
-                    ################# EXPORT AS COG ###########################
-                    # Grab the original HLS S30 granule name
-                    originalName = band.name.rsplit('/', 1)[-1]
-                    bandName = band.name.rsplit('.', 2)[-2]
-
-                    # Generate output name from the original filename
-                    outName = f"{outDir}{originalName.split('.v2.0.')[0]}.v2.0.{bandName}.subset.tif"
-                    tempName = f"{outDir}temp.tif"
-                    # Create output GeoTIFF with overviews
-                    out_tif = rio.open(tempName, 'w', driver='GTiff', height=subset.shape[0], width=subset.shape[1], count=1, tiled= True,  dtype=str(subset.dtype), crs=band.crs, transform=btransform)
-
-                    # Write the scaled, quality filtered band to the newly created GeoTIFF
-                    out_tif.write(subset, 1)
-
-                    # Define number of overviews from the source data
-                    out_tif.build_overviews(band.overviews(1), Resampling.average)  # Calculate overviews
-                    out_tif.update_tags(ns='rio_overview', resampling='average')    # Update tags
-                    out_tif.nodata = band.meta['nodata']                            # Define fill value
-                    out_tif.scales = scale_factor                 # Define scale value
-                    out_tif.offsets = add_offset                  # Define offset
-                    kwds = out_tif.profile
-                    kwds.update( compress='deflate', LAYOUT= 'COG')                                          # Save profile
-                    # kwds['tiled'] = True
-                    # kwds['compress'] = 'LZW'
-                    out_tif.close()
-                    # Open output file, add tiling and compression, and export as valid COG
-                    with rio.open(tempName, 'r+') as src:
-                        rio.shutil.copy(src, outName, copy_src_overviews=True, **kwds)
-                    src.close() , os.remove(tempName)
-                    all_cogs.append(outName)  # Update list of outputs
-                    print(f"Exported {outName} ({z} of {len(files)-1})")
-
-
-                if qf is False: # there is no need to get the Fmask layers if data is quality filtered
-                    # Export quality layer (Fmask)
-                    outName = f"{outDir}{originalName.split('.v2.0.')[0]}.v2.0.Fmask.subset.tif"
-                    tempName = f"{outDir}temp.tif"
-                    out_tif = rio.open(tempName, 'w', driver='GTiff', height=qa_subset.shape[1], width=qa_subset.shape[2], tiled= True, count=1, dtype=str(qa_subset.dtype), crs=qa.crs, transform=qa_transform)
-                    out_tif.write(qa_subset[0], 1)
-                    out_tif.build_overviews(qa.overviews(1), Resampling.average)
-                    out_tif.update_tags(ns='rio_overview', resampling='average')
-                    out_tif.nodata = qa.meta['nodata']
-                    kwds = out_tif.profile
-                    kwds.update( compress='deflate', LAYOUT= 'COG')                                          # Save profile
-                    # kwds['tiled'] = True
-                    # kwds['compress'] = 'LZW'
-                    
-                    out_tif.close()
-                    with rio.open(tempName, 'r+') as src:
-                        rio.shutil.copy(src, outName, copy_src_overviews=True, **kwds)
-                    src.close(), os.remove(tempName)
-                    all_cogs.append(outName)
-                    z += 1
-                    print(f"Exported {outName} (Quality)")
-                break
-            except:
-                print(f"Unable to process assets for item {f}. (Attempt {retry+1} of 3)")
-                
-                # Add files that are failing to a list
-                if retry == 2:
-                    for d in file_dict[f]: failed.append(d)
-                
-    # Download ancillary files
-    warnings.filterwarnings('ignore')
-    for a in ancillary_files:
-        for retry in range(0,3):
-            try:
-                a_content = r.get(a, verify=False).content
-                with open(a.rsplit('/', 1)[-1], 'wb') as handler:
-                    handler.write(a_content)
-                z += 1
-                print(f"Exported {a} ({z} of {len(files)})")
-                break
-            except:
-                print(f"Unable to download {a}. (Attempt {retry+1} of 3)")
-                
-                # Add files that are failing to a list
-                if retry == 2:
-                    failed.append(a)
-
-    # If the user asked for COG outputs, end script execution
-    if of == 'COG': print(f"All files have been processed and exported to: {outDir}")
-    ######################## EXPORT AS NC4 or ZARR ############################
-    # Use xarray to stack the cogs into NC4 or ZARR
-    else:
-        import xarray as xr
-
-        # Split observations by tile (1 nc4/zarr exported per HLS tile)
-        tiles = list(np.unique([c.rsplit('.', 7)[1] for c in all_cogs]))
-        for t in tiles:
-            # If second retry, grab all available files to stack
-            if fileList.endswith('failed.txt'):
-                cogs = [a for a in os.listdir() if t in a and a.endswith('.tif')]
-            else:
-                cogs = [a for a in all_cogs if t in a] 
-
-            # Create an output file name using first and last observation date
-            times = list(np.unique([datetime.strptime(c.rsplit('.', 7)[2], '%Y%jT%H%M%S') for c in cogs]))
-            outName = f"HLS.{t}.{min(times).strftime('%m%d%Y')}.{max(times).strftime('%m%d%Y')}.subset"
-
-            # Create a list of variables so script can create xarray data arrays by variable
-            variables = list(np.unique([c.split('.')[-3] for c in cogs]))
-            for j,v in enumerate(variables):
-                vcogs = [vc for vc in cogs if v in vc]
-                for i, c in enumerate(vcogs):
-
-                    # Grab acquisition time from filename
-                    time = datetime.strptime(c.rsplit('.v1.5', 1)[0].rsplit('.', 1)[-1], '%Y%jT%H%M%S')
-
-                    # Need to set up the xarray data array for the first file
-                    if i == 0:
-                        # Open file using rasterio
-                        stack = xr.open_rasterio(c)
-                        stack = stack.squeeze(drop=True)
-
-                        # Define time coordinate
-                        stack.coords['time'] = np.array(time)
-
-                        # Rename coordinates
-                        stack = stack.rename({'x':'lon', 'y':'lat', 'time':'time'})
-                        stack = stack.expand_dims(dim='time')
-
-                        # Below, set up attributes to be CF-Compliant (1.6)
-                        stack.attrs['standard_name'] = v
-                        stack.attrs['long_name'] = f"HLS {v}"
-                        stack.attrs['missing_value'] = stack.nodatavals[0]
-                        stack['x'] = stack.lon
-                        stack['y'] = stack.lat
-                        stack.x.attrs['axis'] = 'X'
-                        stack.x.attrs['standard_name'] = 'projection_x_coordinate'
-                        stack.x.attrs['long_name'] = 'x-coordinate in projected coordinate system'
-                        stack.y.attrs['axis'] = 'Y'
-                        stack.y.attrs['standard_name'] = 'projection_y_coordinate'
-                        stack.y.attrs['long_name'] = 'y-coordinate in projected coordinate system'
-                        stack.time.attrs['axis'] = 'Z'
-                        stack.time['standard_name'] = 'time'
-                        stack.time['long_name'] = 'time'
-                        stack.lon.attrs['units'] = 'degrees_east'
-                        stack.lon.attrs['standard_name'] = 'longitude'
-                        stack.lon.attrs['long_name'] = 'longitude'
-                        stack.lat.attrs['units'] = 'degrees_north'
-                        stack.lat.attrs['standard_name'] = 'latitude'
-                        stack.lat.attrs['long_name'] = 'latitude'
-                        wkt = CRS.from_epsg(stack.crs.split(':')[-1]).to_wkt()
-                        stack['spatial_ref'] = int()
-                        stack.spatial_ref.attrs['grid_mapping_name'] = 'transverse_mercator'
-                        stack.spatial_ref.attrs['spatial_ref'] = wkt
-                        stack.variable.attrs['grid_mapping'] = 'spatial_ref'
-                        stack.variable.attrs['_FillValue'] = stack.nodatavals[0]
-                        stack.variable.attrs['units'] = 'None'
-                        stack.x.attrs['units'] = 'm'
-                        stack.y.attrs['units'] = 'm'
-                        stack.x.attrs['standard_name'] = 'x'
-                        stack.y.attrs['standard_name'] = 'y'
-                        stack.spatial_ref.attrs['standard_name'] = 'CRS'
-                        stack.time.attrs['standard_name'] = 'time'
-
-                    else:
-                        # If data array already set up, add to it
-                        S = xr.open_rasterio(c)
-                        S = S.squeeze(drop=True)
-                        S.coords['time'] = np.array(time)
-                        S = S.rename({'x':'lon', 'y':'lat', 'time':'time'})
-                        S = S.expand_dims(dim='time')
-
-                        # Concatenate the new array to the data array
-                        stack = xr.concat([stack, S], dim='time')
-                stack.name = v
-
-                # Now merge data arrays into single dataset
-                if j == 0:
-                    stack_dataset = stack
-                else:
-                    stack_dataset = xr.merge([stack_dataset, stack])
-
-            # Make the NetCDF CF-Compliant
-            stack_dataset.attrs['Conventions'] = 'CF-1.6'
-            stack_dataset.attrs['title'] = 'HLS'
-            stack_dataset.attrs['nc.institution'] = 'Unidata'
-            stack_dataset.attrs['source'] = 'LP DAAC'
-        
-            # If this is the second run of HLS_PER.py OR there are no failed files, export
-            if len(failed) == 0 or fileList.endswith('failed.txt'):
-                
-                # Export as NC4 or ZARR
-                if of == 'NC4':
-                    stack_dataset.to_netcdf(f"{outName}.nc4")
-                    print(f"Exported {outName}.nc4")
-                else:
-                    stack_dataset.to_zarr(f"{outName}.zarr")
-                    print(f"Exported {outName}.zarr")
-        
-        # If this is the second run of HLS_PER.py OR there are no failed files, remove cogs
-        if len(failed) == 0 or fileList.endswith('failed.txt'): 
-        
-            # Remove the COGS
-            for a in all_cogs:
-                os.remove(a)
-    
-    # if any files failed, export failed list of links
-    if len(failed) != 0:
-        out_file2 = f"{outDir}HLS_SuPER_links_failed.txt"
-        with open(out_file2, "w") as output:
-            for d in failed:
-                output.write(f'{d}\n')
-                
-        # if the files are still failing after second retry, let the user know
-        if fileList.endswith('failed.txt'):
-            out_file3 = f"{outDir}HLS_SuPER_links_failed_twice.txt"
-            with open(out_file3, "w") as output:
-                for d in failed:
-                    output.write(f'{d}\n')
-            print(f"Unable to process  all assets. Check {out_file3} for a list of files that were not processed.")
-    
-    # Clean up failed file list, so not picked up in future script executions
-    if fileList.endswith('failed.txt'):
-        os.remove(fileList)
+        # Write Outputs
+        # if output_type == "NC4":
+        output_path = os.path.join(
+            output_dir, f"HLS.{tile}.{first_date}.{final_date}.subset.nc"
+        )
+        dataset.to_netcdf(output_path)
+        # elif output_type == "ZARR":
+        #     output_path = os.path.join(output_dir, "hls_timeseries_dataset.zarr")
+        #     dataset.to_zarr(output_path)
+        logging.info(f"Output saved to {output_path}")
