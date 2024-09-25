@@ -582,7 +582,6 @@ def main():
     total_time = time.time() - start_time
     logging.info(
         f"Processing complete. Total time: {round(total_time,2)}s, "
-        f"{round(total_time/total_assets,2)} s/asset."
     )
 
 
