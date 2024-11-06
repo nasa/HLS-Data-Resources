@@ -23,6 +23,7 @@ import json
 
 import earthaccess
 from shapely.geometry import polygon, box
+from shapely.geometry.polygon import orient
 import geopandas as gpd
 from datetime import datetime as dt
 import dask.distributed
@@ -148,7 +149,15 @@ def parse_arguments():
 
     return parser.parse_args()
 
-
+def ensure_ccw(geom):
+    """
+    Ensure the exterior ring of the polygon is counterclockwise.
+    """
+    if geom.exterior.is_ccw:
+        return geom  # Already counterclockwise
+    else:
+        return orient(geom, sign=1.0)  # Make it counterclockwise
+    
 def format_roi(roi):
     """
     Determines if submitted ROI is a file or bbox coordinates.
@@ -174,6 +183,7 @@ def format_roi(roi):
                 logging.info(roi)
             # Check if ROI is in Geographic CRS, if not, convert to it
             if roi.crs.is_geographic:
+                roi['geometry'] = roi['geometry'].apply(ensure_ccw)
                 # List Vertices in correct order for search
                 vertices_list = list(roi.geometry[0].exterior.coords)
 
@@ -182,6 +192,7 @@ def format_roi(roi):
                 logging.info(
                     "Note: ROI submitted is being converted to Geographic CRS (EPSG:4326)"
                 )
+                roi['geometry'] = roi['geometry'].apply(ensure_ccw)
                 vertices_list = list(roi_geographic.geometry[0].exterior.coords)
         except (FileNotFoundError, ValueError):
             sys.exit(
