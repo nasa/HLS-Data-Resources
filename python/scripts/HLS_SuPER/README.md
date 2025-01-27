@@ -74,7 +74,7 @@ For local Python environment setup we recommend using [mamba](https://mamba.read
 > python HLS_SuPER.py -roi <insert geojson, shapefile, or bounding box coordinates here> -dir <insert directory to save the output files to>
 ```  
 
-> **Note:** After running the script, it will show inputs then conduct a search for results. A prompt for a **y/n** will appear to proceed with processing. This is to ensure that the user is away of the quantity of results/files that will be processed.
+> **Note:** After running the script, it will show inputs then conduct a search for results. A prompt for a **y/n** will appear to proceed with processing. This is to ensure that the user is aware of the quantity of results/files that will be processed.
 
 ### Examples  
 
