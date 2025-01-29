@@ -4,7 +4,12 @@
 
 ## Objective  
 
-NASA's Land Processes Distributed Active Archive Center (LP DAAC) archives and distributes Harmonized Landsat Sentinel-2 (HLS) version 2.0 products in the LP DAAC Cumulus cloud archive as Cloud Optimized GeoTIFFs (COG). the HLS_SuPER.py data prep script is a command line-executable Python script that allows users to submit inputs for their desired spatial (GeoJSON, Shapefile, bounding box) region of interest (ROI), time period of interest, and the specific desired product(s) and bands/layers within the HLS products. The script also includes options for cloud screening observations by a user-defined threshold, quality filtering, applying the scale factor to the data, and users can pick between three output file format options (COG, NC4, ZARR). The inputs provided by the user are submitted into NASA's Common Metadata Repository SpatioTemporal Asset Catalog (CMR-STAC) API endpoint. The script returns a list of links to the HLS observations that intersect the user's input parameters. From there, the cloud-native observations are accessed, clipped to the spatial ROI, [optionally] quality filtered (see section on quality filtering below), [optionally] scaled, and exported in the desired output file format. Each request includes the accompanying metadata, browse, and quality (Fmask) files. If NetCDF-4 or ZARR are selected as the output file format, observations will be stacked into files grouped by HLS tile. This script does not support resampling or reprojection.  
+NASA's Land Processes Distributed Active Archive Center (LP DAAC) archives and distributes Harmonized Landsat Sentinel-2 (HLS) version 2.0 products in the LP DAAC Cumulus cloud archive as Cloud Optimized GeoTIFFs (COG). the HLS_SuPER.py data prep script is a command line-executable Python script that allows users to submit inputs for their desired spatial (GeoJSON, Shapefile, bounding box) region of interest (ROI), time period of interest, and the specific desired product(s) and bands/layers within the HLS products. The script also includes options for cloud screening observations by a user-defined threshold, quality filtering, applying the scale factor to the data, and users can pick between two output file format options:
+
+  1. COG which returns an output for each source file
+  2. NetCDF4 which creates a single output with variables corresponding to bands and stacking all temporal observations for each band.
+  
+To construct these outputs, the input arguments provided by the user in command line are submitted to NASA's Common Metadata Repository API endpoint via the `earthaccess` Python library to find data. The script then returns a .json containing a nested list of all resulting granules with assets nested within for each HLS observation that intersect the user's input parameters. After outputing this file, it is leveraged to access the cloud-native HLS data for each asset, which are clipped to the ROI provided and exported in the desired output file format. Optionally, data can be quality filtered (see section on quality filtering below) and/or scaled. **This script does not support resampling or reprojection.**
 
 ### Available Products  
 
@@ -18,66 +23,58 @@ NASA's Land Processes Distributed Active Archive Center (LP DAAC) archives and d
 
 ## Prerequisites  
 
-This tutorial has been tested on Windows and MacOS using the specifications identified below.  
+1. **Earthdata Login account**  
+    - Create an Earthdata Login account (if you don't already have one) at <https://urs.earthdata.nasa.gov/users/new>
+    - Remember your username and password; you will need them to download or access data during the workshop and beyond.
+2. **A Local Copy of this Repository**
+    - Copy/clone/[download](https://github.com/nasa/HLS-Data-Resources/archive/refs/heads/main.zip) the [HLS-Data-Resources Repository](https://github.com/nasa/HLS-Data-Resources.git). You will need all three of the python scripts downloaded to the same directory on your OS (HLS_Su.py, HLS_PER.py, HLS_SuPER.
+3. **Compatible Python Environment**
+    - See the [Python Environment Setup](#python-environment-setup) section below.
+    - If you have previously set up the [**lpdaac_vitals** environment](https://github.com/nasa/VITALS/blob/main/setup/setup_instructions.md) for a workshop or content from the [VITALS repository](https://github.com/nasa/VITALS/tree/main), you can use that environment for this script as well. 
 
-- **Python Version 3.11**  
-  - `shapely`  
-  - `geopandas`  
-  - `gdal`  
-  - `rasterio`  
-  - `pyproj`  
-  - `requests`
-  - `earthaccess`
-If exporting to `nc4` or `zarr`:  
-    - `xarray`  
-    - `netCDF4`  
-    - `zarr`  
-
----  
-
-> **Note:** This data prep script relies on the **CMR-STAC** API, which will continue to evolve in order to align with the STAC spec over time. As these changes are released, we will update this script as necessary. If you are encountering an issue with the script, please check out the [CHANGELOG.md](https://git.earthdata.nasa.gov/projects/LPDUR/repos/hls-super-script/browse/CHANGELOG.md) and make sure that you have copied/cloned/downloaded the latest release of this script.  
-
-## Procedures  
-
-To get started, copy/clone/[download](https://git.earthdata.nasa.gov/rest/api/latest/projects/LPDUR/repos/hls-super-script/archive?format=zip) the [HLS-SuPER-Script repo](https://git.earthdata.nasa.gov/projects/LPDUR/repos/hls-super-script/browse). You will need all three of the python scripts downloaded to the same directory on your OS (HLS_Su.py, HLS_PER.py, HLS_SuPER.py).  
 
 ### Python Environment Setup  
 
-It is recommended to use [Conda](https://conda.io/docs/), an environment manager, to set up a compatible Python environment. Download Conda for your OS [here](https://www.anaconda.com/download/). Once you have Conda installed, follow the instructions below to successfully setup a Python environment on Windows, MacOS, or Linux.  
+For local Python environment setup we recommend using [mamba](https://mamba.readthedocs.io/en/latest/) to manage Python packages. To install *mamba*, download [miniforge](https://github.com/conda-forge/miniforge) for your operating system.  If using Windows, be sure to check the box to "Add mamba to my PATH environment variable" to enable use of mamba directly from your command line interface. **Note that this may cause an issue if you have an existing mamba install through Anaconda.**  
 
-Using your preferred command line interface (command prompt, terminal, cmder, etc.) type the following to create a compatible python environment:  
+1. Using your preferred command line interface (command prompt, terminal, cmder, etc.) navigate to your local copy of the repository, then type the following to create a compatible Python environment.
 
-```None
-> conda create -n hls -c conda-forge --yes python=3.11 gdal rasterio shapely geopandas pyproj requests xarray netcdf4 zarr earthaccess
-```  
+    For Windows:
 
-```None
-> conda activate hls
-````  
+    ```cmd
+    mamba create -n lpdaac_vitals -c conda-forge --yes python=3.10 fiona=1.8.22 gdal hvplot geoviews rioxarray rasterio jupyter geopandas earthaccess jupyter_bokeh h5py h5netcdf spectral scikit-image jupyterlab seaborn dask ray-default
+    ```
 
-> **Note:** If you are having trouble activating your environment, or loading specific packages once you have activated your environment? Try the following: ```conda update conda``` or ```conda update --all```  
+    For MacOSX:
 
-If you prefer to not install Conda, the same setup and dependencies can be achieved by using another package manager such as pip and the [requirements.txt file](https://git.earthdata.nasa.gov/projects/LPDUR/repos/hls-super-script/browse/requirements.txt).  
+    ```cmd
+    mamba create -n lpdaac_vitals -c conda-forge --yes python=3.10 gdal=3.7.2 hvplot geoviews rioxarray rasterio geopandas fiona=1.9.4 jupyter earthaccess jupyter_bokeh h5py h5netcdf spectral scikit-image seaborn jupyterlab dask ray-default ray-dashboard
+    ```
 
-[Additional information](https://conda.io/docs/user-guide/tasks/manage-environments.html) on setting up and managing Conda environments.  
+2. Next, activate the Python Environment that you just created.
 
-If you continue to have trouble getting a compatible Python environment set up? Contact [LP DAAC User Services](https://lpdaac.usgs.gov/lpdaac-contact-us/).  
-
-### Setting up a netrc File
-
-Netrc files contain remote username/passwords that can only be accessed by the user of that OS (stored in home directory). Here we use a netrc file to store NASA Earthdata Login credentials. If a netrc file is not found when the script is executed, you will be prompted for your NASA Earthdata Login username and password by the script, and a netrc file will be created in your home directory. If you prefer to manually create your own netrc file, download the [.netrc file template](https://git.earthdata.nasa.gov/projects/LPDUR/repos/daac_data_download_python/browse/.netrc), add your credentials, and save to your home directory. A [NASA Earthdata Login Account](https://urs.earthdata.nasa.gov/) is required to download HLS data.  
-
----
+    ```cmd
+    mamba activate lpdaac_vitals 
+    ```
+**Still having trouble getting a compatible Python environment set up? Contact [LP DAAC User Services](https://lpdaac.usgs.gov/lpdaac-contact-us/).**  
 
 ## Script Execution  
 
- Once you have set up your environment and it has been activated, navigate to the directory containing the downloaded or cloned repo (with HLS_SuPER.py, HLS_Su.py, and HLS_PER.py). At a minimum, the script requires a region of interest (roi).  
+1. Once you have completed the prerequisites, open your command line interface navigate to the directory containing the script.
+ 
+2. Ensure your python environment created above is activated.
 
-```None
+    ```cmd
+    mamba activate lpdaac_vitals 
+    ```
+
+3.  The script requires an `roi`, which can be either a shapefile, geojson, or list of bbox coordinates (lower left longitude, lower left latitude, upper right longitude, upper right latitude). Other arguments are optional. See below for some examples of how to execute the script.
+
+```cmd
 > python HLS_SuPER.py -roi <insert geojson, shapefile, or bounding box coordinates here> -dir <insert directory to save the output files to>
 ```  
 
-> **Note:** The script will first use the inputs provided to find all intersecting HLS files and export the links to a text file. The user will then be prompted with the number of intersecting files and asked if they would like to continue downloading and processing all of the files (y/n). If your request returns hundreds of files for a large area, you may want to consider breaking the request into smaller requests by submitting multiple requests with different spatial/temporal/band subsets.  
+> **Note:** After running the script, it will show inputs then conduct a search for results. A prompt for a **y/n** will appear to proceed with processing. This is to ensure that the user is away of the quantity of results/files that will be processed.
 
 ### Examples  
 
@@ -105,7 +102,7 @@ To see the full set of command line arguments and how to use them, type the foll
 usage: HLS_SuPER.py [-h] -roi ROI [-dir DIR] [-start START] [-end END]
                     [-prod {HLSS30,HLSL30,both}] [-bands BANDS] [-cc CC]
                     [-qf {True,False}] [-scale {True,False}]
-                    [-of {COG,NC4,ZARR}]  
+                    [-of {COG,NC4}]  
 ...
 ```
 
@@ -133,19 +130,19 @@ Example
 #### -start START  
 
 ```None  
-Start date for time period of interest: valid format is mm/dd/yyyy (e.g. 10/20/2020). (default: 04/03/2014)  
+Start date for time period of interest: valid format is yyyy-mm-dd (e.g. 2020-10-20). (default: 2014-04-03)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02  
 ```  
 
 #### -end END  
 
 ```None  
-Start date for time period of interest: valid format is mm/dd/yyyy (e.g. 10/24/2020). (default: 12/17/2020)  
+Start date for time period of interest: valid format is yyyy-mm-dd (e.g. 2020-10-20). (default: current date)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24  
 ```  
 
 #### -prod {HLSS30,HLSL30,both}  
@@ -154,7 +151,7 @@ Example
 Desired product(s) to be subset and processed. (default: both)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020 -prod both  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24 -prod both  
 ```  
 
 #### -bands BANDS  
@@ -163,7 +160,7 @@ Example
 Desired layers to be processed. Valid inputs are ALL, COASTAL-AEROSOL, BLUE, GREEN, RED, RED-EDGE1, RED-EDGE2, RED-EDGE3, NIR1, SWIR1, SWIR2, CIRRUS, TIR1, TIR2, WATER-VAPOR, FMASK. To request multiple layers, provide them in comma separated format with no spaces. Unsure of the names for your bands?--check out the README which contains a table of all bands and band names. (default: ALL)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020 -prod both -bands RED,GREEN,BLUE,NIR1  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24 -prod both -bands RED,GREEN,BLUE,NIR1  
 ```  
 
 #### -cc CC  
@@ -172,7 +169,7 @@ Example
 Maximum cloud cover (percent) allowed for returned observations (e.g. 35). Valid range: 0 to 100 (integers only) (default: 100)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50`  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50`  
 ```  
 
 #### -qf {True,False}  
@@ -181,7 +178,7 @@ Example
 Flag to quality filter before exporting output files (see section below for quality filtering performed). (default: True)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50 -qf True  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50 -qf True  
 ```  
 
 #### -scale {True,False}  
@@ -190,16 +187,16 @@ Example
 Flag to apply scale factor to layers before exporting output files. (default: True)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50 -qf True -scale False  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50 -qf True -scale False  
 ```
 
-#### -of {COG,NC4,ZARR}  
+#### -of {COG,NC4}  
 
 ```None  
 Define the desired output file format (default: COG)  
 
 Example  
-> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 06/02/2020 -end 10/24/2020 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50 -qf True -scale False -of NC4  
+> python HLS_SuPER.py -roi '-120,43,-118,48' -dir C:\Users\HLS\ -start 2020-06-02 -end 2020-10-24 -prod both -bands RED,GREEN,BLUE,NIR1 -cc 50 -qf True -scale False -of NC4  
 ```  
 
 ### Quality Filtering  
@@ -222,7 +219,7 @@ If you do not want the data to be quality filtered, set argument `qf` to `False`
 
 ### Output File Formats  
 
-Cloud-Optimized GeoTIFF (COG) is the default output file format. If NetCDF-4 (NC4) or ZARR store (ZARR) are selected by the user as the output file format, the script will export a single NC4/ZARR file for each HLS tile returned by the query, in the source HLS projection. Zarr is a file format that stores data in chunked, compressed N-dimensional arrays. Read more about Zarr at: https://zarr.readthedocs.io/.  
+Cloud-Optimized GeoTIFF (COG) is the default output file format. If NetCDF-4 (NC4) is selected by the user as the output file format, the script will export a single NC4 file for each HLS tile returned by the query, in the source HLS projection. 
 
 #### Output File Names  
 
@@ -237,23 +234,21 @@ The standard format  for HLS S30 V2.0 and HLS L30 V2.0 filenames is as follows:
 
 For additional information on HLS naming conventions, be sure to check out the [HLS Overview Page](https://lpdaac.usgs.gov/data/get-started-data/collection-overview/missions/harmonized-landsat-sentinel-2-hls-overview/#hls-naming-conventions).  
 
-If you selected COG as the output file format, the output file name will simply include **.subset.tif** at the end of the filename:  
-> HLS.S30.T17SLU.2020117T160901.v2.0.B8A.subset.tif  
+If you selected COG as the output file format, the output file name will have product specific band names renamed the common names in available bands and include **.subset.tif** at the end of the filename:  
+> HLS.S30.T17SLU.2020117T160901.v2.0.NIR1.subset.tif  
 
-If you selected nc4 or Zarr as the output file format, the following naming convention will be used:  
-**ex:** HLS.T17SLU.10_24_2020.11_10_2020.subset.nc4  
-> HLS.[MGRS Tile ID].[date of first observation in output file].[date of last observation in output file].subset.zarr/nc4  
+If you selected nc4 as the output file format, the following naming convention will be used:  
+**ex:** HLS.T17SLU.2020-10-24.2020-11-10.subset.nc4  
+> HLS.[MGRS Tile ID].[date of first observation in output file].[date of last observation in output file].subset.nc4  
 
 ---
 
-## Contact Information  
+## Contact Info  
 
-**Email:** LPDAAC@usgs.gov  
-**Voice:** +1-866-573-3222  
-**Organization:** Land Processes Distributed Active Archive Center (LP DAAC)  
-**Website:** [https://lpdaac.usgs.gov/](https://lpdaac.usgs.gov/)  
-**Date last modified:** 08-22-2023  
+Email: <LPDAAC@usgs.gov>  
+Voice: +1-866-573-3222  
+Organization: Land Processes Distributed Active Archive Center (LP DAAC)¹  
+Website: <https://lpdaac.usgs.gov/>  
+Date last modified: 2024-09-18  
 
-¹KBR, Inc., contractor to the U.S. Geological Survey, Earth Resources Observation and Science (EROS) Center,  
- Sioux Falls, South Dakota, USA. Work performed under USGS contract G15PD00467 for LP DAAC².  
-²LP DAAC Work performed under NASA contract NNG14HH33I.
+¹Work performed under USGS contract 140G0121D0001 for NASA contract NNG14HH33I.  
