@@ -9,6 +9,7 @@ Below are data use resources available HLS data.
 |Name|Type/Link|Summary|Services and Tools|
 |----|---------|-------|------------------|
 | HLS Python Tutorial | [Python Notebook](python/tutorials/HLS_Tutorial.ipynb) | Tutorial demonstrating how to search for, access, and process HLS data in Python | [earthaccess](https://github.com/nsidc/earthaccess) |
+|EVI Timeseries with ODC-STAC | [Python Notebook](python/tutorials/EVI_timeseries_with_odc_stac.ipynb) | Tutorial demonstrating how to use the Open Data Cube (ODC) and CMR-STAC to create an EVI time series very efficiently | [CMR STAC API](https://cmr.earthdata.nasa.gov/stac) |
 | HLS SuPER Script | [Python Script](python/scripts/HLS_SuPER/) | Find, download, and subset HLS data from a command line executable | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
 | HLS Bulk Download Bash Script | [Bash Script](bash/hls-bulk-download/)| Find and download | [CMR API](https://cmr.earthdata.nasa.gov/search/site/docs/search/api.html) |
 |HLS R Tutorial | [R Markdown](r/HLS_Tutorial.Rmd) | Tutorial demonstrating how to search for, access, and process HLS data in R | [CMR STAC API](https://cmr.earthdata.nasa.gov/stac) |
