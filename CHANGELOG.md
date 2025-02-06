@@ -1,3 +1,8 @@
+02-06-2025
+
+- Add [EVI_timeseries_with_odc_stac.ipynb](python/tutorials/EVI_timeseries_with_odc_stac.ipynb) to the repository
+  - This notebook demonstrates how to use the Open Data Cube (ODC) STAC API to create an EVI time series.
+
 09-17-2024
 
 - Update [HLS_Tutorial.Rmd](r/tutorials/HLS_Tutorial.Rmd)
