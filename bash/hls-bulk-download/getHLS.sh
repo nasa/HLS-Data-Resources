@@ -70,11 +70,31 @@ OUTDIR=$4
 
 set -u
 set -o pipefail
+USER=${USER:-$(id -un 2>/dev/null || echo "user")}    # A setting in case USER is not set in the main script. It is used in the subshells as well.
 
-### A few customizable parameter 
-NP=10       # Run this many download processes by default. 
+### A few customizable parameter
+NP=10       # Run this many download processes by default.
 CLOUD=100   # Maximum amount of cloud cover in %
 SPATIAL=0   # Minimum amount of spatial cover in %
+
+### Find gdalinfo: check PATH first, then search common conda/QGIS/OSGeo roots
+GDALINFO=$(which gdalinfo 2>/dev/null)
+if [ -z "$GDALINFO" ]; then
+    GDALINFO=$(find \
+        "$HOME/AppData/Local/miniforge3" \
+        "$HOME/AppData/Local/miniconda3" \
+        "$HOME/anaconda3" "$HOME/miniconda3" "$HOME/miniforge3" \
+        "/opt/conda" "/usr/local" \
+        "/c/OSGeo4W64" "/c/OSGeo4W" "/c/Program Files" \
+        \( -name "gdalinfo.exe" -o -name "gdalinfo" \) 2>/dev/null | head -1)
+fi
+if [ -n "$GDALINFO" ] && [ -x "$GDALINFO" ]; then
+    echo "gdalinfo found: $GDALINFO"
+else
+    echo "gdalinfo not found; will use file size check only (install GDAL for deeper integrity check)"
+    GDALINFO=""
+fi
+export GDALINFO
 
 ### export for  subshell. Not needed.  Apr 3, 2026 
 #WGETBANDWITH="--limit-rate=2000k  --no-check-certificate"  # "--limit-rate" was suggested by NCCS ADAPT; necessary?
@@ -225,62 +245,71 @@ function same_filesize()
     # If interruption occurs in this function, simply exit, without deleting $outdir.
     trap 'exit 1 ' HUP INT TERM 
 
-    ### File sizes reported in the CMR manifest file 
-    expected_fsize=/tmp/expected.filesize.$granule.txt
-    >$expected_fsize
     cmr=$outdir/$granule.cmr.xml
     if [ ! -f $cmr ]
     then
         return 1    # Clearly wrong, even CMR file is missing
     fi
+    ### Extract per-file sizes from <AdditionalFile> blocks in the CMR XML.
+    ### Each block has <Name>filename</Name> and <SizeInBytes>N</SizeInBytes>.
+    perfile_sizes=$(awk '
+        /<AdditionalFile>/  { in_block=1; name=""; size="" }
+        in_block && /<Name>/        { gsub(/.*<Name>|<\/Name>.*/, ""); name=$0 }
+        in_block && /<SizeInBytes>/ { gsub(/.*<SizeInBytes>|<\/SizeInBytes>.*/, ""); size=$0 }
+        in_block && /<\/AdditionalFile>/ { if (name && size) print name, size; in_block=0 }
+    ' $cmr)
 
-    passcmr=/tmp/passcmr.$granule.txt
-    tr "<>" "\n" <$cmr >$passcmr
-    for hlsfile in $(cat $filesInGranule)
-    do 
-        base=$(basename $hlsfile)
-        # Interestingly, the cmr.xml does not report its own file size
-        case $base in
-            $granule.cmr.xml) continue;;
+    failed=0
+
+    if [ -z "$perfile_sizes" ]
+    then
+        ### CMR has no per-file sizes; fall back to gdalinfo to check each .tif
+        echo "......CMR does not have per-file sizes for $granule, using gdalinfo for integrity check" >&2
+        if [ -z "$GDALINFO" ] || [ ! -x "$GDALINFO" ]
+        then
+            echo "......gdalinfo not available, skipping integrity check" >&2
+            return 0
+        fi
+        for hlsfile in $(cat $filesInGranule)
+        do
+            base=$(basename $hlsfile)
+            case $base in *.tif) ;; *) continue;; esac
+            if [ ! -f $outdir/$base ]
+            then
+                echo "......Missing file: $base" >&2
+                failed=1
+            elif ! "$GDALINFO" $outdir/$base >/dev/null 2>&1
+            then
+                echo "......gdalinfo check failed for $base: file is corrupt or truncated, will delete $outdir" >&2
+                failed=1
+            else
+                echo "......gdalinfo check passed: $base" >&2
+            fi
+        done
+        return $failed
+    fi
+
+    ### Compare each downloaded .tif against its expected size from the CMR
+    while read -r fname expected_size
+    do
+        case $fname in
+            *.tif) ;;
+            *) continue;;
         esac
 
-        fsize=$(grep -A 9 "^$base" $passcmr | 
-                    grep -A 2  "^SizeInBytes" | 
-                    awk 'NR == 2' )
-
-        if [ -z "$fsize" ]
+        actual_size=$( ls -l $outdir/$fname 2>/dev/null | awk '{print $5}' )
+        if [ -z "$actual_size" ]
         then
-            return 1        # CMR itself is probably corrupted.
-        fi
-        echo $base $fsize >>$expected_fsize
-    done    
-
-    ### Check the size of each downloaded file 
-    download_fsize=/tmp/downloaded.filesize.$granule.txt
-    >$download_fsize
-    for hlsfile in $(cat $filesInGranule)
-    do 
-        base=$(basename $hlsfile)
-
-        # Interestingly, the cmr.xml does not report its own file size
-        case $base in
-            $granule.cmr.xml) continue;;
-        esac
-
-        fsize=$( ls -l $outdir/$base 2>/dev/null | awk '{print $5}' )
-        if [ $? -ne 0 ] 
+            echo "......Missing file: $fname" >&2
+            failed=1
+        elif [ "$actual_size" -ne "$expected_size" ]
         then
-            return 1            # Bail out.
+            echo "......Size mismatch: $fname downloaded $actual_size bytes, expected $expected_size bytes" >&2
+            failed=1
         fi
-        echo $base $fsize >>$download_fsize
-    done
+    done <<< "$perfile_sizes"
 
-    ### Compare file size files
-    diff $download_fsize $expected_fsize  >/dev/null 2>&1
-    stat=$?
-    rm $download_fsize  $expected_fsize 
-
-    return $stat
+    return $failed
 }
 export -f same_filesize
 
@@ -299,6 +328,7 @@ function download_granule()
 
     set -u  # The setting does not propagate from the main script.
     set -o pipefail
+    USER=${USER:-$(id -un 2>/dev/null || echo "user")}       # A setting in case USER is not set in the subshell.
 
     # All the files in this granule
     filesInGranule=/tmp/tmp.files.in.${granule}.txt.${USER} 
