@@ -1,100 +1,100 @@
-#!/bin/bash 
+#!/bin/bash
 
-# A bash script to download HLS V.20 data from LP DAAC. It runs on an OS where 
-# bash is available: Linux, Mac, (some Windows as well?). An account on 
-# urs.earthdata.nasa.gov is required. 
+# A bash script to download HLS v2.0 data from LP DAAC. It runs on an OS where
+# bash is available: Linux, Mac, (some Windows as well?). An account on
+# urs.earthdata.nasa.gov is required.
 #
-# The HLS products are saved in subdirectories of the specified output directory like
+# HLS files are saved in subdirectories of the specified output directory:
 #   L30/2025/18/S/U/J/HLS.L30.T18SUJ.2025208T154620.v2.0/
 #   S30/2025/18/S/U/J/HLS.S30.T18SUJ.2025219T154819.v2.0
 #
 # Features include:
-#   1) Run multiple download processes in parallel 
-#   2) Download with corruption detection. Delete the granule once file 
-#      corruption is detected, and a second invocation of this script 
-#      only download for the failed ones in the previous run.
+#   1) Query CMR metadata by tile ID, date range, cloud cover, and spatial cover
+#   2) Paginated CMR queries — no limit on the number of granules returned
+#   3) Run multiple download processes in parallel
+#   4) Each file is downloaded to a temp path and renamed on success (atomic writes)
+#   5) Each file is retried up to 3 times before being marked as failed
+#   6) Successfully downloaded files are kept even if other files in the granule fail;
+#      failed URLs are written to failed_downloads.txt for re-run
+#   7) Re-run mode: pass <failed_downloads.txt> <out_dir> to retry only failed files;
+#      already-downloaded files are skipped automatically
+#   8) Start/end date order is validated before querying
 #
-# Command-line paramaeters:
-#   $1: a text file of tile IDs of 5 characters
-#   $2: start of the sensing date
-#   $3: end of the sensing date, inclusive
-#   $4: the parent directory of output; subdirectories are to be created in it.  
+# Command-line parameters:
+#   Normal run:  $0 <tilelist> <date_begin> <date_end> <out_dir>
+#   Re-run:      $0 <failed_downloads.txt> <out_dir>
 #
-# Implementation notes: 
-#    1) The metadata query result can be returned in either xml or json format. 
-#       Choose json format because it gives the data file paths directly. 
-#    2) The parameter NP in this script specifies how many parallel download processes 
-#       to run.  The default is 10; can be modifed based on the capacity of the local computer. 
-#       Similarly, CLOUD_COVERAGE and SPATIAL_COVERAGE thresholds  are hard-coded to 
-#       give all the data, but can be adjusted at the beginning of this script..
-#    3) Both wget and curl can download multiple files in one invocation.
-#       They appear to be have the same speed.
+#   <tilelist>   : text file of 5-character MGRS tile IDs, one per line
+#   <date_begin> : start of sensing date range, format YYYY-MM-DD
+#   <date_end>   : end of sensing date range, inclusive, format YYYY-MM-DD
+#   <out_dir>    : parent output directory; subdirectories are created within it
 #
-# Additional implementation notes (12/1/2022):
-#    4) curl on Centos (NCCS) does not accept the "[]" specification when the query
-#       attribute specifies a range of value. 
-#
-#       For example:
-#       query="${query}&attribute[]=int,SPATIAL_COVERAGE,$SPATIAL," 
-#       would cause curl on Centos to return an exit code 3: 
-#           [globbing] illegal character in range specification at pos xxx (some number)
-#       although curl on MacOS accepts.
-#
-#       It turns out that range specifications with and without "[]" are both accepted
-#       by wget, so do not use it at all.
-#
-# Junchang Ju.  June 5, 2021
-#               July 29, 2021
-#               April 3, 2026:  An overhaul. 1) Pagination in query was added, so the search would not limit
-#                               to the max page_size 2000.
-#                               2) Corruption detection in downloading was implemented. The size of each
-#                               downloaded file is compared with the value reported in the cmr.xml file.
-#                               If a comparision is not possible or the values do not match, it must be
-#                               due to corruption. The corruption detection takes < 1 second. Delete
-#                               the corrupted download granules. A second invocation will fill the gap,
-#                               without redownload the healthy granules.
+# Implementation notes:
+#    1) JSON format is used for CMR metadata queries as it returns file paths directly.
+#    2) NP, CLOUD_COVERAGE, and SPATIAL_COVERAGE are adjustable at the top of this script.
+#    3) curl on CentOS (NCCS) does not accept the "[]" attribute syntax in CMR queries
+#       (exit code 3: globbing error). The "[]"-free syntax is used here for compatibility
+#       with both wget and curl across platforms.
+#    4) Both wget and curl are supported; curl is preferred when both are available.
 #
 
-if [ $# -ne 4 ]
+
+### Defaults for optional flags
+NP=10       # Run this many download processes by default.
+CLOUD=100   # Maximum amount of cloud cover in %
+SPATIAL=0   # Minimum amount of spatial cover in %
+
+### Parse optional flags first, leaving only positional args
+args=()
+while [ $# -gt 0 ]
+do
+    case $1 in
+        --cloud)   CLOUD=$2;   shift 2;;
+        --spatial) SPATIAL=$2; shift 2;;
+        --np)      NP=$2;      shift 2;;
+        *)         args+=("$1"); shift;;
+    esac
+done
+set -- "${args[@]}"
+
+if [ $# -eq 2 ]
 then
-    echo "Usage: $0 <tilelist> <date_begin> <date_end> <out_dir>" >&2
+    # Re-run shorthand: <failed_downloads.txt> <out_dir>
+    tilelist=$1
+    datebeg="N/A"
+    dateend="N/A"
+    OUTDIR=$2
+elif [ $# -eq 4 ]
+then
+    tilelist=$1
+    datebeg=$2
+    dateend=$3
+    OUTDIR=$4
+else
+    echo "Usage: $0 <tilelist> <date_begin> <date_end> <out_dir> [--cloud N] [--spatial N] [--np N]" >&2
     echo "where <tilelist> is a text file of 5-character tile IDs" >&2
-    echo "      <date_begin> and <date_end> are in the format 2021-12-31" >&2 
-    echo "      <out_dir> is the parent output directory, within which subdirectories are to be created" >&2 
+    echo "      <date_begin> and <date_end> are in the format 2021-12-31" >&2
+    echo "      <out_dir> is the parent output directory, within which subdirectories are to be created" >&2
+    echo "      --cloud N    maximum cloud cover % (default 100)" >&2
+    echo "      --spatial N  minimum spatial cover % (default 0)" >&2
+    echo "      --np N       number of parallel download processes (default 10)" >&2
+    echo "" >&2
+    echo "To retry failed granules: $0 <failed_downloads.txt> <out_dir>" >&2
     exit 1
 fi
-tilelist=$1
-datebeg=$2
-dateend=$3
-OUTDIR=$4
+
+### Detect re-run mode: 2-arg invocation always means re-run; otherwise check file contents.
+RERUN_MODE=false
+if [ $# -eq 2 ]; then
+    RERUN_MODE=true
+elif grep -q '^https://' "$tilelist" 2>/dev/null; then
+    RERUN_MODE=true
+fi
 
 set -u
 set -o pipefail
 USER=${USER:-$(id -un 2>/dev/null || echo "user")}    # A setting in case USER is not set in the main script. It is used in the subshells as well.
 
-### A few customizable parameter
-NP=10       # Run this many download processes by default.
-CLOUD=100   # Maximum amount of cloud cover in %
-SPATIAL=0   # Minimum amount of spatial cover in %
-
-### Find gdalinfo: check PATH first, then search common conda/QGIS/OSGeo roots
-GDALINFO=$(which gdalinfo 2>/dev/null)
-if [ -z "$GDALINFO" ]; then
-    GDALINFO=$(find \
-        "$HOME/AppData/Local/miniforge3" \
-        "$HOME/AppData/Local/miniconda3" \
-        "$HOME/anaconda3" "$HOME/miniconda3" "$HOME/miniforge3" \
-        "/opt/conda" "/usr/local" \
-        "/c/OSGeo4W64" "/c/OSGeo4W" "/c/Program Files" \
-        \( -name "gdalinfo.exe" -o -name "gdalinfo" \) 2>/dev/null | head -1)
-fi
-if [ -n "$GDALINFO" ] && [ -x "$GDALINFO" ]; then
-    echo "gdalinfo found: $GDALINFO"
-else
-    echo "gdalinfo not found; will use file size check only (install GDAL for deeper integrity check)"
-    GDALINFO=""
-fi
-export GDALINFO
 
 ### export for  subshell. Not needed.  Apr 3, 2026 
 #WGETBANDWITH="--limit-rate=2000k  --no-check-certificate"  # "--limit-rate" was suggested by NCCS ADAPT; necessary?
@@ -116,18 +116,27 @@ else
     fi
 fi
 
-### Check on date format
-for d in $datebeg $dateend
-do
-    case $d in
-      [12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]);;
-      *) echo "Given date $d not in the format 2021-12-31" >&2; exit 1;;
-        esac      
-done
+### Check on date format and order (skip in re-run mode)
+if [ $RERUN_MODE = false ]
+then
+    for d in $datebeg $dateend
+    do
+        case $d in
+          [12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]);;
+          *) echo "Given date $d not in the format 2021-12-31" >&2; exit 1;;
+            esac
+    done
+    if [[ "$datebeg" > "$dateend" ]]
+    then
+        echo "Start date $datebeg is after end date $dateend" >&2
+        exit 1
+    fi
+fi
 
 ### Delete the tailing "/" from the output directory name if there is any.
-OUTDIR=$(echo $OUTDIR | sed 's:/$::')   
-export OUTDIR   # Must export for the subshell
+OUTDIR=$(echo $OUTDIR | sed 's:/$::')
+FAILREPORT=$OUTDIR/failed_downloads.txt
+export OUTDIR FAILREPORT   # Must export for the subshells
 
 ### wget/curl availability
 WGET=false
@@ -150,272 +159,281 @@ fbase=$(basename $tilelist)
 fbase=${fbase}.$datebeg.$dateend
 
 ### Build up the query.
-### The base for search. 
-### collection_concept_id for HLS v2.0, both L30 and S30. 
-querybase="https://cmr.earthdata.nasa.gov/search/granules.json?collection_concept_id=C2021957295-LPCLOUD&collection_concept_id=C2021957657-LPCLOUD"
-### Add date range
-querybase="${querybase}&temporal=${datebeg}T00:00:00Z,${dateend}T23:59:59Z"
+### The base for search.
+### collection_concept_id for HLS v2.0, both L30 and S30.
 
-### Other possible parameters.
-querybase="${querybase}&attribute=int,SPATIAL_COVERAGE,$SPATIAL,"   # min 
-querybase="${querybase}&attribute=int,CLOUD_COVERAGE,,$CLOUD"       # max. type has been changed from float to int. (4/25/2022)
-
-### Query the metadata with pagination.
-meta=/tmp/${fbase}.down.meta.txt.$USER.$$
->$meta
-
-onequery=/tmp/$fbase.single.query.$USER     # the return from one query in pagination.
-
-echo "Searching CMR ......"
-for tile in $(cat $tilelist)
-do
-    # A rough check if the tile ID is valid
-    case $tile in
-      [0-6][0-9][A-Z][A-Z][A-Z]);;
-      *) echo "Not a valid 5-character tile ID, ignore: $tile" >&2;
-             continue;;
-    esac
-
-    # Note: do not make wget quite (-q) and curl silent (-s); instead display any error message. 12/1/2022
-    psize=200   # A small page size to test pagination.  This many granules (not files within a granule)  per page.
-    if [ $WGET = true ]
-    then
-        pnum=1
-        while :
-        do
-            query="${querybase}&attribute=string,MGRS_TILE_ID,$tile&page_size=$psize&page_num=$pnum"
-            wget  "$query" -O $onequery 
-            if grep '"entry":\[\]' $onequery  >/dev/null        # Nothing to return
-            then
-                break
-            fi
-
-            cat $onequery >>$meta
-            pnum=$((pnum+1))
-        done
-    else
-        pnum=1
-        while :
-        do
-            query="${querybase}&attribute=string,MGRS_TILE_ID,$tile&page_size=$psize&page_num=$pnum"
-            curl  "$query"  >$onequery
-            if grep '"entry":\[\]' $onequery  >/dev/null
-            then
-                break
-            fi
-
-            cat $onequery >>$meta
-            pnum=$((pnum+1))
-        done
-    fi
-done
-
-### Parse metadata to get a list of files to download. 
+### Parse metadata to get a list of files to download.
 ### Export the filelist variable for subshells.
 ### Sort file names for humans.
-ALLFILELIST=/tmp/${fbase}.down.flist.txt.$USER.$$
-export ALLFILELIST
 
-# Example granule name:
-#   HLS.L30.T18SUJ.2025183T155159.v2.0
-# Download the granules chronologically, i.e., sort on the 3rd and 4th fields in the granule name
-nprefix=9   # Skip so many characters to sort on the 3rd and 4th fields. A value in 6,7,8 has this effect as well.
-
-tr "," "\n" < $meta  | 
-  grep https |                              # ignore the s3 links
-  egrep "/HLS.[LS]30." |                    # granule names 
-  tr "\"" " " |
-  awk '{print $(NF-1)}' |                   # the full https link
-  awk -F"/" '{print $NF, $0}' |
-  sort -k1.$nprefix |                       # sort from this column of filename on  
-  awk '{print $2}' >$ALLFILELIST
-
-### Return 0 if the sizes of downloaded files and the reported sizes are the same;
-### non-zero otherwise.  A check for possible download corruption, much faster than
-### the robust checksum.
-function same_filesize()
-{
-    # Two arguments. Granule name and its output directory
-    local granule=$1
-    local outdir=$2
-
-    set -u  # The setting does not propagate from the main script.
-    set -o pipefail
-
-    # If interruption occurs in this function, simply exit, without deleting $outdir.
-    trap 'exit 1 ' HUP INT TERM 
-
-    cmr=$outdir/$granule.cmr.xml
-    if [ ! -f $cmr ]
+if [ $RERUN_MODE = true ]
+then
+    if [ ! -f "$tilelist" ] || [ ! -s "$tilelist" ]
     then
-        return 1    # Clearly wrong, even CMR file is missing
+        echo ""
+        echo "All previously failed files have been downloaded successfully."
+        exit 0
     fi
-    ### Extract per-file sizes from <AdditionalFile> blocks in the CMR XML.
-    ### Each block has <Name>filename</Name> and <SizeInBytes>N</SizeInBytes>.
-    perfile_sizes=$(awk '
-        /<AdditionalFile>/  { in_block=1; name=""; size="" }
-        in_block && /<Name>/        { gsub(/.*<Name>|<\/Name>.*/, ""); name=$0 }
-        in_block && /<SizeInBytes>/ { gsub(/.*<SizeInBytes>|<\/SizeInBytes>.*/, ""); size=$0 }
-        in_block && /<\/AdditionalFile>/ { if (name && size) print name, size; in_block=0 }
-    ' $cmr)
+    echo "Re-run mode: using $tilelist as the file list directly"
+    # Copy to a temp file BEFORE clearing FAILREPORT — in re-run mode tilelist IS
+    # failed_downloads.txt, so we must read it before wiping it.
+    ALLFILELIST=/tmp/hls.rerun.flist.${USER}.$$
+    cp "$tilelist" "$ALLFILELIST"
+    export ALLFILELIST
+else
+    ALLFILELIST=/tmp/${fbase}.down.flist.txt.$USER.$$
+    export ALLFILELIST
+fi
 
-    failed=0
+### Clear the failure report so it only reflects the current run.
+rm -f "$FAILREPORT"
 
-    if [ -z "$perfile_sizes" ]
-    then
-        ### CMR has no per-file sizes; fall back to gdalinfo to check each .tif
-        echo "......CMR does not have per-file sizes for $granule, using gdalinfo for integrity check" >&2
-        if [ -z "$GDALINFO" ] || [ ! -x "$GDALINFO" ]
-        then
-            echo "......gdalinfo not available, skipping integrity check" >&2
-            return 0
-        fi
-        for hlsfile in $(cat $filesInGranule)
-        do
-            base=$(basename $hlsfile)
-            case $base in *.tif) ;; *) continue;; esac
-            if [ ! -f $outdir/$base ]
-            then
-                echo "......Missing file: $base" >&2
-                failed=1
-            elif ! "$GDALINFO" $outdir/$base >/dev/null 2>&1
-            then
-                echo "......gdalinfo check failed for $base: file is corrupt or truncated, will delete $outdir" >&2
-                failed=1
-            else
-                echo "......gdalinfo check passed: $base" >&2
-            fi
-        done
-        return $failed
-    fi
+if [ $RERUN_MODE = false ]
+then
+    querybase="https://cmr.earthdata.nasa.gov/search/granules.json?collection_concept_id=C2021957295-LPCLOUD&collection_concept_id=C2021957657-LPCLOUD"
+    ### Add date range
+    querybase="${querybase}&temporal=${datebeg}T00:00:00Z,${dateend}T23:59:59Z"
 
-    ### Compare each downloaded .tif against its expected size from the CMR
-    while read -r fname expected_size
+    ### Other possible parameters.
+    querybase="${querybase}&attribute=int,SPATIAL_COVERAGE,$SPATIAL,"   # min
+    querybase="${querybase}&attribute=int,CLOUD_COVERAGE,,$CLOUD"       # max. type has been changed from float to int. (4/25/2022)
+
+    ### Query the metadata with pagination.
+    meta=/tmp/${fbase}.down.meta.txt.$USER.$$
+    >$meta
+
+    onequery=/tmp/$fbase.single.query.$USER     # the return from one query in pagination.
+
+    echo "Searching CMR ......"
+    for tile in $(cat $tilelist)
     do
-        case $fname in
-            *.tif) ;;
-            *) continue;;
+        # A rough check if the tile ID is valid
+        case $tile in
+          [0-6][0-9][A-Z][A-Z][A-Z]);;
+          *) echo "Not a valid 5-character tile ID, ignore: $tile" >&2;
+                 continue;;
         esac
 
-        actual_size=$( ls -l $outdir/$fname 2>/dev/null | awk '{print $5}' )
-        if [ -z "$actual_size" ]
+        # Note: do not make wget quite (-q) and curl silent (-s); instead display any error message. 12/1/2022
+        psize=200   # A small page size to test pagination.  This many granules (not files within a granule)  per page.
+        if [ $WGET = true ]
         then
-            echo "......Missing file: $fname" >&2
-            failed=1
-        elif [ "$actual_size" -ne "$expected_size" ]
-        then
-            echo "......Size mismatch: $fname downloaded $actual_size bytes, expected $expected_size bytes" >&2
-            failed=1
+            pnum=1
+            while :
+            do
+                query="${querybase}&attribute=string,MGRS_TILE_ID,$tile&page_size=$psize&page_num=$pnum"
+                wget --timeout=60 --tries=1 "$query" -O $onequery
+                if ! grep -q '"entry"' $onequery; then break; fi      # no valid CMR response
+                if grep -q '"entry":\[\]' $onequery; then break; fi   # empty page, done
+                cat $onequery >>$meta
+                pnum=$((pnum+1))
+            done
+        else
+            pnum=1
+            while :
+            do
+                query="${querybase}&attribute=string,MGRS_TILE_ID,$tile&page_size=$psize&page_num=$pnum"
+                curl -s --max-time 60 "$query" >$onequery
+                if ! grep -q '"entry"' $onequery; then break; fi      # no valid CMR response
+                if grep -q '"entry":\[\]' $onequery; then break; fi   # empty page, done
+                cat $onequery >>$meta
+                pnum=$((pnum+1))
+            done
         fi
-    done <<< "$perfile_sizes"
+    done
 
-    return $failed
-}
-export -f same_filesize
+    # Example granule name:
+    #   HLS.L30.T18SUJ.2025183T155159.v2.0
+    # Download the granules chronologically, i.e., sort on the 3rd and 4th fields in the granule name
+    nprefix=9   # Skip so many characters to sort on the 3rd and 4th fields. A value in 6,7,8 has this effect as well.
 
-### A function to download all the files for the given granule. 
-### If a granule has been downloaded before without corruption, skip. 
-### If some corruption occurs during this download, the downloaded files 
-### will be deleted; in this case, re-run the download script to make 
-### another attempt.
-function download_granule()
+    tr "," "\n" < $meta  |
+      grep https |                              # ignore the s3 links
+      egrep "/HLS.[LS]30." |                    # granule names
+      tr "\"" " " |
+      awk '{print $(NF-1)}' |                   # the full https link
+      awk -F"/" '{print $NF, $0}' |
+      sort -k1.$nprefix |                       # sort from this column of filename on
+      awk '{print $2}' >$ALLFILELIST
+fi
+
+### Download a single file to a temp path and rename to final name on success.
+### Returns 0 on success, 1 on failure.
+function download_file()
 {
-    # The only argument.
-    # Example granule name
-    # HLS.S30.T18SUJ.2025182T155819.v2.0
-    granule=$1
-    
+    local url=$1
+    local outdir=$2
+    local cookie=$3
 
-    set -u  # The setting does not propagate from the main script.
-    set -o pipefail
-    USER=${USER:-$(id -un 2>/dev/null || echo "user")}       # A setting in case USER is not set in the subshell.
+    local fname
+    fname=$(basename "$url")
+    local tmpfile="$outdir/.tmp.$fname"
+    local finalfile="$outdir/$fname"
 
-    # All the files in this granule
-    filesInGranule=/tmp/tmp.files.in.${granule}.txt.${USER} 
-    grep $granule $ALLFILELIST > $filesInGranule 
+    rm -f "$tmpfile"
 
-    # Buildup the output directory from the common parent directory.
-    set $(echo $granule | awk -F"." '{ print $2, substr($3,2,5), substr($4,1,4)}')
-    type=$1
-    tileid=$2
-    year=$3
+    # CONN_TIMEOUT: seconds to wait for the initial connection
+    # STALL_TIMEOUT: seconds allowed with no data received before aborting
+    # MAX_TIME: hard ceiling on total time per file (covers stalled TCP connections)
+    local CONN_TIMEOUT=30
+    local STALL_TIMEOUT=60
+    local MAX_TIME=600
 
-    subdir=${tileid:0:2}/${tileid:2:1}/${tileid:3:1}/${tileid:4:1}
-    outdir=$OUTDIR/$type/$year/$subdir/$granule
-
-    # If the output directory exists, check its integrity
-    if [ -d $outdir ]
-    then
-        same_filesize $granule $outdir 
-        if [ $? = 0 ]
-        then
-            # A complete copy has been download before. No need to download again.
-            return 0
-        fi
-    fi
-
-    mkdir -p $outdir
-    # Cookie is needed by curl on my mac at least. Without it, only the jpg and json 
-    # files in lp-prod-public are downloaded, but not the files in /lp-prod-protected/ 
-    # on the DAAC server.
-    cookie=/tmp/tmp.cookie.$granule.$USER
-
-    # Ready to download new granules or redownload corrupted granules. 
-    trap 'echo Interruption occcurred, deleting $outdir; rm -rf $outdir; exit 1'  HUP INT TERM 
-    echo "Downloading into $outdir" 
     if [ $WGET = true ]
     then
-        TLIMIT=240
-        timeout $TLIMIT wget -q -N -i $filesInGranule -P $outdir
+        wget -q --timeout=$STALL_TIMEOUT --tries=1 --connect-timeout=$CONN_TIMEOUT "$url" -O "$tmpfile"
         exitcode=$?
-        if [ $exitcode -eq 0 ]
-        then
-            echo "Finished downloading into $outdir, now let's do quality check" >&2
-        else
-            echo "Wget with exit code $exitcode on $granule" 
-            rm -rf $outdir
-            return 1
-        fi
     else
-        # Curl does not take a list of URL; bad.
-        # Older curl does not have the option for output directory. So use subshell.
-        ( cd $outdir && cat $filesInGranule | xargs curl --cookie-jar $cookie -n -s -L -C - --remote-name-all )
+        curl --cookie-jar "$cookie" -n -s -L \
+             --connect-timeout $CONN_TIMEOUT \
+             --speed-limit 1 --speed-time $STALL_TIMEOUT \
+             --max-time $MAX_TIME \
+             --output "$tmpfile" "$url"
         exitcode=$?
-        if [ $? -eq 0 ] 
-        then    
-            echo "Finished downloading into $outdir, let's do quality check" >&2
-        else 
-            echo "Curl with exit code $exitcode on $granule" 
-            rm -rf $outdir
-            return 1 
+    fi
+
+    if [ $exitcode -ne 0 ]
+    then
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    mv "$tmpfile" "$finalfile"
+    return 0
+}
+export -f download_file
+
+### Download all files for a granule, one file at a time with temp-file safety.
+### If a granule directory already exists and is complete, skip it.
+### Retries each file up to MAX_ATTEMPTS times. On total failure, records URLs
+### to the shared FAILREPORT for re-run.
+function download_granule()
+{
+    local granule=$1
+
+    set -u
+    set -o pipefail
+    USER=${USER:-$(id -un 2>/dev/null || echo "user")}
+
+    # Build the output directory path from the granule name fields.
+    # HLS.S30.T18SUJ.2025182T155819.v2.0 -> type=S30, tileid=18SUJ, year=2025
+    local gtype gtileid gyear
+    gtype=$(  echo "$granule" | awk -F'.' '{print $2}')
+    gtileid=$(echo "$granule" | awk -F'.' '{print substr($3,2,5)}')
+    gyear=$(  echo "$granule" | awk -F'.' '{print substr($4,1,4)}')
+
+    local subdir="${gtileid:0:2}/${gtileid:2:1}/${gtileid:3:1}/${gtileid:4:1}"
+    local outdir="$OUTDIR/$gtype/$gyear/$subdir/$granule"
+
+    # Collect the URLs for this granule (anchored match to avoid substring collisions).
+    local filesInGranule="/tmp/tmp.files.in.${granule}.txt.${USER}"
+    grep "/${granule}/" "$ALLFILELIST" > "$filesInGranule"
+
+    mkdir -p "$outdir"
+    local cookie="/tmp/tmp.cookie.${granule}.${USER}"
+    trap 'echo "Interrupted, cleaning up $outdir"; rm -rf "$outdir"; rm -f "$filesInGranule" "$cookie"; exit 1' HUP INT TERM
+
+    local MAX_ATTEMPTS=3
+    local granule_failed=0   # set to 1 if any file in the granule fails
+
+    while IFS= read -r url
+    do
+        [ -z "$url" ] && continue
+        local fname
+        fname=$(basename "$url")
+
+        if [ -f "$outdir/$fname" ]
+        then
+            echo "Skipping $fname (already exists)"
+            continue
         fi
 
-        rm -f $cookie
-    fi
+        local attempt=0
+        local file_ok=1
 
-    # The exit status from wget or curl is not reliable? (For curl, maybe because we're using a subshell?)
-    # Let's check the integrity of the downloading.
-    echo "......verifying file size for $granule "
-    same_filesize $granule $outdir 
-    if [ $? -ne 0 ]
+        while [ $attempt -lt $MAX_ATTEMPTS ]
+        do
+            attempt=$((attempt + 1))
+            echo "Downloading $fname (attempt $attempt of $MAX_ATTEMPTS)"
+            download_file "$url" "$outdir" "$cookie"
+            if [ $? -eq 0 ]
+            then
+                file_ok=0
+                break
+            fi
+            echo "......Failed to download $fname (attempt $attempt of $MAX_ATTEMPTS)" >&2
+        done
+
+        if [ $file_ok -ne 0 ]
+        then
+            echo "......All $MAX_ATTEMPTS attempts failed for $fname" >&2
+            echo "$url" >> "$FAILREPORT"
+            granule_failed=1
+        fi
+    done < "$filesInGranule"
+
+    rm -f "$cookie"
+
+    if [ $granule_failed -ne 0 ]
     then
-        echo "......Corruption detected in the downloaded files. Later need to rerun this script again. Deleting $outdir" >&2
-        rm -rf $outdir
+        echo "......Granule $granule incomplete." >&2
+    else
+        echo "Finished $granule"
     fi
 
-    rm -f $filesInGranule 
+    rm -f "$filesInGranule"
 }
 export -f download_granule
 
 ### Run $NP bash subshells
-ng=$(grep B01 $ALLFILELIST | wc -l | awk '{print $1}')
-echo -e "\nThe search found $ng granules. Going through the granules now, and"
-echo "      granules previously downloaded with integrity will be skipped."
+if [ $RERUN_MODE = true ]
+then
+    ng=$(wc -l < $ALLFILELIST | awk '{print $1}')
+    echo -e "\nRe-running $ng failed file(s)."
+    # Derive unique granule names from the failed URLs and re-download
+    awk -F"/" '{print $NF}' $ALLFILELIST |
+        sed 's/\.[^.]*\.[^.]*$//' |
+        sort -u |
+        xargs -P $NP -I% bash -c "download_granule %"
+else
+    ng=$(grep B01 $ALLFILELIST | wc -l | awk '{print $1}')
+    if [ $ng -eq 0 ]
+    then
+        echo -e "\nThe search found 0 granules."
+        echo "NOTE: If you expected results, CMR may be temporarily unavailable or experiencing issues."
+        echo "      Check https://status.earthdata.nasa.gov and retry if needed."
+    else
+        echo -e "\nThe search found $ng granules. Going through the granules now, and"
+        echo "      granules previously downloaded with integrity will be skipped."
+        grep B01 $ALLFILELIST |
+            xargs -I%  basename % .B01.tif |        # Get each granule name from its B01 filename
+            xargs -P $NP -I% bash -c "download_granule %"   # run $NP processes to download
+    fi
+fi
 
-grep B01 $ALLFILELIST | 
-    xargs -n1 -I%  basename % .B01.tif |        # Get each granule name from its B01 filename
-    xargs -n1 -P $NP -I% bash -c "download_granule %"   # run $NP processes to download
+if [ $RERUN_MODE = false ]; then
+    rm -f $meta $onequery
+fi
+rm -f $ALLFILELIST
 
-rm -f $meta $ALLFILELIST $onequery
+if [ -f "$FAILREPORT" ] && [ -s "$FAILREPORT" ]
+then
+    echo ""
+    echo "Some files failed to download. Failed URLs saved to:"
+    echo "    $FAILREPORT"
+    echo ""
+    echo "NOTE: Re-run the script to retrieve the missing files:"
+    echo "    $0 $FAILREPORT $OUTDIR"
+else
+    rm -f "$FAILREPORT"
+    echo ""
+    if [ $ng -eq 0 ]; then
+        echo "No granules found for the given parameters."
+    elif [ $RERUN_MODE = true ]; then
+        echo "All previously failed files have been downloaded successfully."
+    else
+        echo "All granules downloaded successfully."
+    fi
+fi
 
 exit 0
